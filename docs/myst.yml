@@ -1,0 +1,44 @@
+version: 1
+project:
+  title: FcsIT Manual
+  authors:
+      - name: Tomasz Kalwarczyk
+  toc:
+    - file: Main_title.ipynb
+    - file: Release_notes.ipynb
+    - file: Installation.ipynb
+    - file: Usage.ipynb
+      children:
+      - file: Import_PTU.ipynb
+      - file: Time-binned.ipynb
+      - file: FCS_fitting.ipynb
+    - file: Fitting_models.ipynb
+    - file: Dev_section.ipynb
+    - file: Credits.ipynb
+    
+
+  bibliography:
+    - references.bib
+site:
+
+  options:
+    base_url: ${BASE_URL}
+    folders: false
+    hide_title_block: true
+    hide_search: true
+    hide_toc: false
+    hide_footer_links: true
+    hide_outline: false
+    logo_text: 'FcsIT'
+    style: custom.css
+  template: book-theme
+  
+
+  parts:
+     primary_sidebar_footer: |
+          <div style="font-size:0.8em;">
+          FcsIT manual  
+          © 2026
+          </div>
+    
+

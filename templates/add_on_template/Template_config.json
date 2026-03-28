@@ -1,0 +1,7 @@
+{
+    "LAYOUT":"Template_layout.py",
+    "INIT":"Template_INIT.py",
+    "ANAL_MENU_ITEM":"Template_menu_item.py",
+    "keyword_handler_tag":"keyword_handler_Template",
+    "menu_class_func":"Template_menu_F"
+}

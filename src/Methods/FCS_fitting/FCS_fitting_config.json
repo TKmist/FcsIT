@@ -1,0 +1,7 @@
+{
+    "LAYOUT":"FCS_FITTING_layout.py",
+    "INIT":"FCS_FITTING_init.py",
+    "ANAL_MENU_ITEM":"FCS_FITTING_anal_menu_item.py",
+    "keyword_handler_tag":"keyword_handler_fcs",
+    "menu_class_func":"fcs_manu_F"
+}

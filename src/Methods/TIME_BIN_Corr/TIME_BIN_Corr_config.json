@@ -1,0 +1,7 @@
+{
+    "LAYOUT":"TIME_BIN_Corr_layout.py",
+    "INIT":"TIME_BIN_Corr_init.py",
+    "ANAL_MENU_ITEM":"TIME_BIN_Corr_anal_menu_item.py",
+    "keyword_handler_tag":"keyword_handler_TIME_BIN_Corr",
+    "menu_class_func":"TB_corr_manu_F"
+}

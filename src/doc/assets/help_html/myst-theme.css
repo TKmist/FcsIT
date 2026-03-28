@@ -1,0 +1,9 @@
+/* User Provided Stylesheet */
+
+header {
+  display: none !important;
+    
+}
+main {
+  padding-top: 0 !important;
+}

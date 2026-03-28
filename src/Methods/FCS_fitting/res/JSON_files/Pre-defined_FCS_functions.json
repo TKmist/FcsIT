@@ -1,0 +1,323 @@
+{
+    "Functions":
+    {
+        "One-component simple diffusion":
+        {
+                "Function_description": "This simplest model describes the Brownian diffusion of single fluorescent species.",
+                "Function_expression": "(1/N_p)*(1/(1+x/tau_d1))*(1/sqrt(1+(kappa**(-2))*(x/tau_d1)))",
+                "Variables":    {
+                                    "N_p":  2.5,
+                                    "tau_d1":   31.5e-3,
+                                    "kappa":    4.9
+                                },
+                "Fixed Variables":    {
+                                    "N_p":  "False",
+                                    "tau_d1":   "False",
+                                    "kappa":    "False"
+                                },
+                "Initial-range":    {
+                                    "N_p":  [0.05,10],
+                                    "tau_d1":   [10e-3,1e-1],
+                                    "kappa":    [3,15]
+                                }
+        },
+        "One-component diffusion with triplets states":
+        {
+            "Function_description": "This model describes the Brownian diffusion of single fluorescent species with triplet states.",
+            "Function_expression": "(1/N_p)*(1+(T/(1-T))*(exp(-x/tau_f)))*(1/(1+x/tau_d1))*(1/sqrt(1+(kappa**(-2))*(x/tau_d1)))",
+            "Variables":    {
+                                "N_p": 1.0,
+                                "T": 0.10000000149011612,
+                                "tau_f": 0.003000000026077032,
+                                "tau_d1": 0.019999999552965164,
+                                "kappa": 4.900000095367432
+                            },
+            "Fixed Variables":    {
+                                "N_p": "False",
+                                "T": "False",
+                                "tau_f": "False",
+                                "tau_d1": "False",
+                                "kappa": "False"
+                            },
+            "Initial-range":    {
+                                    "N_p": [0.009999999776482582, 100.0],
+                                    "T": [0.009999999776482582, 0.8999999761581421],
+                                    "tau_f": [9.999999747378752e-05, 0.029999999329447746],
+                                    "tau_d1": [0.009999999776482582, 0.10000000149011612],
+                                    "kappa": [3.0, 9.5]
+                                }
+        },
+        "Two-component simple diffusion":
+        {
+                "Function_description": "This model describes the Brownian diffusion of two independent fluorescent species.",
+                "Function_expression": "(1/N_p)*(A1*(1/(1+x/tau_d1))*(1/(1+x/(kappa**2*tau_d1))**(1/2))+(1-A1)*(1/(1+x/tau_d2))*(1/(1+x/(kappa**2*tau_d2))**(1/2)))",
+                "Variables":    {
+                                    "N_p":  2.5,
+                                    "tau_d1":   31.5e-3,
+                                    "tau_d2":   25e-1,
+                                    "A1":   0.9,
+                                    "kappa":    4.9
+                                    
+                                    
+                                },
+                "Fixed Variables":    {
+                                    "N_p":  "False",
+                                    "tau_d1":   "False",
+                                    "tau_d2":   "False",
+                                    "A1":   "False",
+                                    "kappa":    "False"
+                                    
+                                    
+                                },
+                "Initial-range":    {
+                                    "N_p":  [0.05,10],
+                                    "tau_d1":   [10e-3,1e-1],
+                                    "tau_d2":   [10e-3,1e1],
+                                    "A1":   [0.01,0.99],
+                                    "kappa":    [3,15]
+                                    
+                                    
+                                }
+        },
+        "Two-component diffusion with triplet states":
+        {
+            "Function_description": "This model describes the Brownian diffusion of two fluorescent species with triplet states.",
+            "Function_expression": "(1/N_p)*(1+(T/(1-T))*(exp(-x/tau_f)))*(A1*(1/(1+x/tau_d1))*(1/(1+x/(kappa**2*tau_d1))**(1/2))+(1-A1)*(1/(1+x/tau_d2))*(1/(1+x/(kappa**2*tau_d2))**(1/2)))",
+            "Variables":    {
+                                "N_p": 1.0,
+                                "T": 0.10000000149011612,
+                                "tau_f": 0.003000000026077032,
+                                "tau_d1": 0.019999999552965164,
+                                "tau_d2": 0.10000000149011612,
+                                "A1": 0.10000000149011612,
+                                "kappa": 4.900000095367432
+                            },
+            "Fixed Variables":    {
+                                "N_p": "False",
+                                "T": "False",
+                                "tau_f": "False",
+                                "tau_d1": "False",
+                                "tau_d2": "False",
+                                "A1": "False",
+                                "kappa": "False"
+                            },
+            "Initial-range":    {
+                                    "N_p": [0.009999999776482582, 100.0],
+                                    "T": [0.009999999776482582, 0.8999999761581421],
+                                    "tau_f": [9.999999747378752e-05, 0.029999999329447746],
+                                    "tau_d1": [0.009999999776482582, 0.10000000149011612],
+                                    "tau_d2": [0.009999999776482582, 0.30000001192092896],
+                                    "A1": [0.0010000000474974513, 0.9990000128746033],
+                                    "kappa": [3.0, 9.5]
+                                }
+        },
+         "Anomalous diffusion":
+        {
+            "Function_description": "This model describes the anomalous diffusion of single fluorescent species.",
+            "Function_expression": "(1/N_p)*(1/(1+(x/tau_d1)**alpha))*(1/sqrt(1+(kappa**(-2))*(x/tau_d1)**alpha))",
+            "Variables":    {
+                                "N_p": 1.0,
+                                "tau_d1": 0.019999999552965164,
+                                "alpha": 0.9,
+                                "kappa": 4.900000095367432
+                            },
+            "Fixed Variables":    {
+                                "N_p": "False",
+                                "tau_d1": "False",
+                                "alpha": "False",
+                                "kappa": "False"
+                            },
+            "Initial-range":    {
+                                    "N_p": [0.009999999776482582, 100.0],
+                                    "tau_d1": [0.009999999776482582, 0.10000000149011612],
+                                    "alpha": [0.3, 0.99],
+                                    "kappa": [3.0, 9.5]
+                                }
+        },
+         "Three-component simple diffusion":
+        {
+            "Function_description": "This model describes the Brownian diffusion of three fluorescent species.",
+            "Function_expression": "(1/N_p)*(A1*((1/(1+x/tau_d1))*(1/sqrt(1+(kappa**(-2))*(x/tau_d1))))+(A2)*((1/(1+x/tau_d2))*(1/sqrt(1+(kappa**(-2))*(x/tau_d2))))+(1-(A1+A2))*((1/(1+x/tau_d3))*(1/sqrt(1+(kappa**(-2))*(x/tau_d3)))))",
+            "Variables":    {
+                                "N_p": 1.0,
+                                "tau_d1": 0.019999999552965164,
+                                "tau_d2": 0.119999999552965164,
+                                "tau_d3": 0.419999999552965164,
+                                "A1": 0.10000000149011612,
+                                "A2": 0.50000000149011612,
+                                "kappa": 4.900000095367432
+                            },
+            "Fixed Variables":    {
+                                "N_p": "False",
+                                "tau_d1": "False",
+                                "tau_d2": "False",
+                                "tau_d3": "False",
+                                "A1": "False",
+                                "A2": "False",
+                                "kappa": "False"
+                            },
+            "Initial-range":    {
+                                    "N_p": [0.009999999776482582, 100.0],
+                                    "tau_d1": [0.009999999776482582, 0.10000000149011612],
+                                    "tau_d2": [0.009999999776482582, 0.30000001192092896],
+                                    "tau_d3": [0.009999999776482582, 0.80000001192092896],
+                                    "A1": [0.0010000000474974513, 0.4990000128746033],
+                                    "A2": [0.0010000000474974513, 0.4990000128746033],
+                                    "kappa": [3.0, 9.5]
+                                }
+        },
+         "Three-component diffusion with triplet states":
+        {
+            "Function_description": "This model describes the Brownian diffusion of three fluorescent species with triplets.",
+            "Function_expression": "(1/N_p)*(1+(T/(1-T))*(exp(-x/tau_f)))*(A1*((1/(1+x/tau_d1))*(1/sqrt(1+(kappa**(-2))*(x/tau_d1))))+(A2)*((1/(1+x/tau_d2))*(1/sqrt(1+(kappa**(-2))*(x/tau_d2))))+(1-(A1+A2))*((1/(1+x/tau_d3))*(1/sqrt(1+(kappa**(-2))*(x/tau_d3)))))",
+            "Variables":    {
+                                "N_p": 1.0,
+                                "T": 0.10000000149011612,
+                                "tau_f": 0.003000000026077032,
+                                "tau_d1": 0.019999999552965164,
+                                "tau_d2": 0.119999999552965164,
+                                "tau_d3": 0.419999999552965164,
+                                "A1": 0.10000000149011612,
+                                "A2": 0.50000000149011612,
+                                "kappa": 4.900000095367432
+                            },
+            "Fixed Variables":    {
+                                "N_p": "False",
+                                "T": "False",
+                                "tau_f": "False",
+                                "tau_d1": "False",
+                                "tau_d2": "False",
+                                "tau_d3": "False",
+                                "A1": "False",
+                                "A2": "False",
+                                "kappa": "False"
+                            },
+            "Initial-range":    {
+                                    "N_p": [0.009999999776482582, 100.0],
+                                    "T": [0.009999999776482582, 0.8999999761581421],
+                                    "tau_f": [9.999999747378752e-05, 0.029999999329447746],
+                                    "tau_d1": [0.009999999776482582, 0.10000000149011612],
+                                    "tau_d2": [0.009999999776482582, 0.30000001192092896],
+                                    "tau_d3": [0.009999999776482582, 0.80000001192092896],
+                                    "A1": [0.0010000000474974513, 0.4990000128746033],
+                                    "A2": [0.0010000000474974513, 0.4990000128746033],
+                                    "kappa": [3.0, 9.5]
+                                }
+        },
+    "Two-component diffusion: 1st translational diffusion only, 2nd Translational and rotational diffusion":
+        {
+            "Function_description":"User-defined function: The model describes the diffusion in a system composed of two diffusing species where one of the species undergoes rotations in a timescale comparable to the timescale of translational diffusion across the focal volume.\nParameters description:\nG_inf - offset\nN_p - Number of fluorescent molecules\nq - amplitude of diffusing species\nA2 -Second, non zero amplitude for rotation\nA4 - fourth , non-zero amplitude for rotation\nf - fraction relating the rotational to translational diffusion for a given diffusing species.\nA = pi * k_B\nT - Absolute temperature\neta_R1 - Rotational viscosity experienced by the first diffusing species\neta_T1 - Translational viscosity experienced by the first diffusing species\neta_T2 - Translational viscosity experienced by the second diffusing species\nr_1 - Hydrodynamic radius of the first diffusing species \nr_2 - Hydrodynamic radius of the second diffusing species\nomega_0 - Width of the focal volume\nkappa - Structure parameter",
+            "Function_expression": "G_inf+(q*(((1)+(f*A2*exp(-(6*x)/(8*A*(eta_R1/T)*((r_1)**3))))+(f*A4*exp(-(20*x)/(8*A*(eta_R1/T)*((r_1)**3)))))*((1/N_p)*((1+((2*x)/(3*A*(eta_T1/T)*(omega_0**2)*r_1)))**(-1))*((1+((2*x)/(3*A*(eta_T1/T)*(omega_0**2)*(kappa**2)*r_1)))**(-1/2)))))+((1-q)*((1/N_p)*((1+((2*x)/(3*A*(eta_T2/T)*(omega_0**2)*r_2)))**(-1))*((1+((2*x)/(3*A*(eta_T2/T)*(omega_0**2)*(kappa**2)*r_2)))**(-1/2))))",
+            "Variables": {
+                            "A": 2.27e+23,
+                            "A2": 1.1071,
+                            "A4": 0.0464,
+                            "G_inf": 0.0,
+                            "N_p": 1.0,
+                            "T": 298.14,
+                            "eta_R1": 0.00089008,
+                            "eta_T1": 0.00089008,
+                            "eta_T2": 0.00089008,
+                            "f": 0.5,
+                            "kappa": 5.9,
+                            "omega_0": 2e-07,
+                            "q": 0.1,
+                            "r_1": 3e-08,
+                            "r_2": 2e-09
+                        },
+            "Fixed Variables": {
+                            "A": "True",
+                            "A2": "False",
+                            "A4": "False",
+                            "G_inf": "True",
+                            "N_p": "False",
+                            "T": "True",
+                            "eta_R1": "False",
+                            "eta_T1": "False",
+                            "eta_T2": "False",
+                            "f": "False",
+                            "kappa": "False",
+                            "omega_0": "False",
+                            "q": "False",
+                            "r_1": "False",
+                            "r_2": "False"
+                                },
+            "Initial-range": {
+                            "A": [2.27e+23, 2.27e+23],
+                            "A2": [0.775, 1.4393],
+                            "A4": [0.0325, 0.0604],
+                            "G_inf": [-1.0, 1.0],
+                            "N_p": [1e-05, 100.0],
+                            "T": [293.0, 315.0],
+                            "eta_R1": [0.0008, 0.0089008],
+                            "eta_T1": [0.0008, 0.0089008],
+                            "eta_T2": [0.0008, 0.0089008],
+                            "f": [0.0, 1.0],
+                            "kappa": [3.0, 9.0],
+                            "omega_0": [1e-07, 4.5e-07],
+                            "q": [0.0, 1.0],
+                            "r_1": [1e-08, 1e-07],
+                            "r_2": [5e-10, 1e-08]
+                            }
+        },
+        "One-component diffusion with rotation":
+            {
+                "Function_description": "User-defined function: TBA",
+                "Function_expression": "Ginf+((1+(f_T*(exp((-x)/t_T))))*(1+(f_R1*(exp(-((x)/(4*A*(etaR/T)*(r**3))))))+(f_R2*(exp(-((3*x)/(4*A*(etaR/T)*(r**3)))))))*((1/N_p)*((1+(((2*x)/(3*A*(etaT/T)*(w_0**2)*r))**alfa))**(-1))*((1+(((2*x)**alfa)/(((3*A*(etaT/T)*(w_0**2))**alfa)*(kappa**2)*(r**alfa))))**(-1/2))))",
+                "Variables": {
+                                "A": 2.2699999406433627e+23,
+                                "Ginf": 0.0,
+                                "N_p": 1.0,
+                                "T": 298.3999938964844,
+                                "alfa": 1.0,
+                                "etaR": 0.0008900800021365285,
+                                "etaT": 0.0008900800021365285,
+                                "f_R1": 0.10000000149011612,
+                                "f_R2": 0.10000000149011612,
+                                "f_T": 0.0,
+                                "kappa": 5.0,
+                                "r": 2.999999892949745e-08,
+                                "t_T": 3.000000106112566e-06,
+                                "w_0": 2.0000000233721948e-07
+                            },
+                "Fixed Variables": {
+                                "A": "True",
+                                "Ginf": "True",
+                                "N_p": "False",
+                                "T": "True",
+                                "alfa": "True",
+                                "etaR": "False",
+                                "etaT": "True",
+                                "f_R1": "True",
+                                "f_R2": "True",
+                                "f_T": "False",
+                                "kappa": "True",
+                                "r": "False",
+                                "t_T": "True",
+                                "w_0": "True"
+                                },
+                "Initial-range": {
+                                "A": [2.2699999406433627e+23, 2.2699999406433627e+23],
+                                "Ginf": [-1.0, 1.0],
+                                "N_p": [9.999999747378752e-06, 100.0],
+                                "T": [293.0, 315.0],
+                                "alfa": [0.8999999761581421, 1.0],
+                                "etaR": [0.0, 1.0],
+                                "etaT": [0.0, 1.0],
+                                "f_R1": [0.0, 100.0],
+                                "f_R2": [0.0, 100.0],
+                                "f_T": [0.0, 0.9900000095367432],
+                                "kappa": [3.0, 9.0],
+                                "r": [4.999999858590343e-10, 9.999999974752427e-07],
+                                "t_T": [0.0, 0.0010000000474974513],
+                                "w_0": [1.0000000116860974e-07, 4.0000000467443897e-07]
+                                }
+            }
+
+
+        
+        
+    }
+}
+
+

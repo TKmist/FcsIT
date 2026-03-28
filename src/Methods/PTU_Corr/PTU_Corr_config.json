@@ -1,0 +1,7 @@
+{
+    "LAYOUT":"PTU_Corr_layout.py",
+    "INIT":"PTU_Corr_init.py",
+    "ANAL_MENU_ITEM":"PTU_Corr_anal_menu_item.py",
+    "keyword_handler_tag":"keyword_handler_PTU_Corr",
+    "menu_class_func":"PTU_Corr_manu_F"
+}
