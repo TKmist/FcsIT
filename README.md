@@ -10,7 +10,7 @@
   </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-v1.0.0rc5-green" />
+  <img src="https://img.shields.io/badge/version-v1.0.0-green" />
   <a href="https://www.gnu.org/licenses/gpl-3.0">
     <img src="https://img.shields.io/badge/license-GPLv3-blue.svg" />
   </a>
@@ -54,29 +54,8 @@ Make sure you are not using a VPN, as it may block the installation of PIP in th
 The installation script will download all required packages, create the run_FcsIT script or run_FcsIT.bat (on Windows), and create the shortcuts. 
 
 ## Release notes
-#### V1.0.0rc4
- - Automatic updater function implemented
-#### V1.0.0rc3
- - Implemented an updater function for automatic updates (not working untill repository is made public)
- - GitHub Pages ready
- - Samples folder and files reorganised
- - Implemented embedded documentation server
- - Repo folder structure reorganised
-#### V1.0.0rc2
- - Started rewriting the documentation 
- - Click on the error message to go to the file that causes fitting problems in the FCS Fitting module
- - Added quick .ptu header reading for faster reading of the data in.
-#### V1.0.0rc1
- - Correlation curves for each chunk are now saved within the .corr files
- - Calculation of the filtering mask made much faster (bug fixing in the add_chunks logic)
- - _compute_MEAN_STD, make_log_grid_ms, rebin_tau_to_grid, and rebin_chunk_to_grid functions now work for both PTU_corr and TIME_BIN_Corr methods.
- - fcsutils.py moved to include folder and made common for both: PTU_corr and TIME_BIN_Corr methods.
-#### V1.0.0a
- - Moved from the reactions branch
- - cleaned code in the FCS_fitting method
- - cleaned code in the TIME_BIN_Corr method
- - cleaned code in the PTU_Corr method
-
+#### v1.0.0
+This is an initial release of the FcsIT software
 ## License
 
 This project is licensed under the GNU General Public License v3.0 or later.
