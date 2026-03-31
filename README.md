@@ -15,7 +15,7 @@
     <img src="https://img.shields.io/badge/license-GPLv3-blue.svg" />
   </a>
   <a href="https://github.com/USER/FcsIT/releases/latest">
-    <img src="https://img.shields.io/github/v/release/USER/FcsIT?label=download" />
+    <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download" />
   </a>
 </p>
 
