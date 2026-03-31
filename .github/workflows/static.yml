@@ -2,9 +2,7 @@ name: Deploy Jupyter Book to GitHub Pages
 
 on:
   push:
-    #branches: ["main"]   # bootstrap (usuń później)
-    tags:
-      - "v*"
+    branches: ["main"] 
   workflow_dispatch:
 
 env:
