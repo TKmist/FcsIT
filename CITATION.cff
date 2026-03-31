@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 title: "FcsIT - A simple and easy-to-use tool for correlating and fitting the fluorescence correlation spectroscopy (FCS) data."
-version: 1.0.0rc4
+version: 1.0.0
 license: "GPLv3"
 type: software
 abstract: "FcsIT is a tool designed for analysing fluorescence correlation spectroscopy data in a platform-independent manner."
