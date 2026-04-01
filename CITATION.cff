@@ -1,16 +1,16 @@
 cff-version: 1.2.0
-title: "FcsIT - A simple and easy-to-use tool for correlating and fitting the fluorescence correlation spectroscopy (FCS) data."
-version: 1.0.0rc4
-license: "GPLv3"
-type: software
-abstract: "FcsIT is a tool designed for analysing fluorescence correlation spectroscopy data in a platform-independent manner."
+message: "If you use this software, please cite it as below."
 authors:
-  - given-names: Tomasz
-    family-names: Kalwarczyk
+  - family-names: Kalwarczyk
+    given-names: Tomasz
     affiliation: Institute of Physical Chemistry, Polish Academy of Sciences
-    orcid: "https://orcid.org/0000-0003-1136-9789"
-
-    
+    orcid: https://orcid.org/0000-0003-1136-9789
+title: "FcsIT - A simple and easy-to-use tool for correlating and fitting the fluorescence correlation spectroscopy (FCS) data."
+version: 1.0.1
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.1234
+date-released: 2026-03-31
 keywords:
   - Fluorescence correlation spectroscopy
   - analysis
