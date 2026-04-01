@@ -11,13 +11,17 @@
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
   <img src="https://img.shields.io/badge/version-v1.0.1-green" />
+  
+</p>
+<p align="center">
+  
   <a href="https://www.gnu.org/licenses/gpl-3.0">
     <img src="https://img.shields.io/badge/license-GPLv3-blue.svg" />
   </a>
   <a href="https://github.com/TKmist/FcsIT/releases/latest">
     <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download" />
   </a>
-  <a href="https://doi.org/10.5281/zenodo.19351493"><img src="https://zenodo.org/badge/1194606839.svg" alt="DOI"></a>
+  <a href="https://doi.org/10.5281/zenodo.19351493"><img src="https://zenodo.org/badge/1194606839.svg" alt="DOI"/></a>
 </p>
 
 <p align="center">
@@ -100,4 +104,5 @@ Please refer to the font files or accompanying license information for details.
 
 If you use the FcsIT software or any part of it in your academic work, 
 citation of the relevant publications listed below is appreciated.    
-[List of papers to cite will be included here.]
+1. Kalwarczyk, T. (2026). FcsIT: An Open-Source, Cross-Platform Tool for Correlation and Analysis of Fluorescence Correlation Spectroscopy Data. https://doi.org/10.48550/arXiv.2603.29684
+2. Kalwarczyk, T. (2026). FcsIT - A simple and easy-to-use tool for correlating and fitting the fluorescence correlation spectroscopy (FCS) data. https://doi.org/10.5281/zenodo.19351493
