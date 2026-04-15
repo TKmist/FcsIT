@@ -90,9 +90,15 @@ VP_w = dpg.get_viewport_width()
 VP_h = dpg.get_viewport_height()           
 dpg.maximize_viewport() 
 menu.mount_main_Menu_bar()
-
+settwin = inits.sett_window(viewport,inV.init_left_indent,
+                             inV.init_internal_indent,
+                             inV.init_right_indent,
+                             inV.init_bottom_indent,
+                             inV.init_top_indent,
+                             inV.init_group_spacer)
 # try:
-   
+THEME = settwin.OPTIONS['theme_choose']
+build_themes(THEME)
 updt.run_updater()
 print('updt.updater_state =', updt.updater_state)
     

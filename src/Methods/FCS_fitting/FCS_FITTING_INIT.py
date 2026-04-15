@@ -86,12 +86,11 @@ class _FCS_Fitting_init:
         self.group_spacer = int(group_spacer*self.size_ratio['width'])
         self.fnt_ratio = (self.size_ratio['width'] + self.size_ratio['height']) / 2
         self.font_size = int(np.round(font_size * self.fnt_ratio, 0))
-        self.Settings_window = {'width':600,
-                              'height':550,
-                              'pos':(300,200)
-                                }
-        self.Setts_save_defaults = 150
-        self.Setts_cancel = 150
+        # self.Settings_window = {'width':600,
+        #                       'height':550,
+        #                       'pos':(300,200)
+        #                         }
+        
 
         dpg.set_global_font_scale(self.fnt_ratio)
         
@@ -199,61 +198,7 @@ class _FCS_Fitting_init:
     
     
     
-    def load_default_settings(self):
-        path = os.path.join('Methods','FCS_fitting','res','JSON_files','Default_settings.json')
-
-        with open(path) as json_settings:
-            OPTIONS = json.load(json_settings)
-
-        for item in OPTIONS.keys():
-            dpg.set_value(item,OPTIONS[item])
-    def callback_save_as_def(self,sender,app_data):
-        items = ['Sett_export_each',
-                 'Sett_export_to_excel',
-                 'Sett_export_plot_as_png',
-                 'Sett_export_to_csv',
-                 'Sett_export_plot_as_csv',
-                 'Sett_export_to_pickle',
-                 'Sett_export_plot_as_pickle',
-                 'Sett_export_stats',
-                 'Sett_export_plot_loglog',
-                 'Sett_export_stats_to_csv',
-                 'Sett_export_stats_to_xlsx',
-                 'Sett_export_stats_to_pickle',
-                 'Sett_preserve_time',
-                 'Sett_preserve_units',
-                 'default_quick_export_filename',
-                 'default_quick_stst_filename']
-
-        options = {}
-        for item in items:
-            
-            options[item]=dpg.get_value(item)
-
-        
-        path = os.path.join('Methods','FCS_fitting','res','JSON_files','Default_settings.json')
-        with open(path, 'w') as f:
-            json.dump(options, f, indent=4, sort_keys=False)
-        dpg.configure_item(sender,enabled=False)   
-    def callback_settings_data_stats(self,sender,app_data):   
-        items = ['Sett_export_stats_to_csv','Sett_export_stats_to_xlsx',]
-        dpg.configure_item('Setts_save_defaults',enabled=True)
-        if app_data:
-            for item in items:
-                dpg.configure_item(item, enabled = True)
-        else:
-            for item in items:
-
-                dpg.configure_item(item, enabled = False)
-    def callback_settings_data_export_each(self,sender,app_data): 
-        items = ['Sett_export_to_excel','Sett_export_to_csv','Sett_export_to_pickle']
-        dpg.configure_item('Setts_save_defaults',enabled=True)
-        if app_data:
-            for item in items:
-                dpg.configure_item(item, enabled = True)
-        else:
-            for item in items:
-                dpg.configure_item(item, enabled = False)
+    
     
                                  
 ###############################################################################

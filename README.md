@@ -59,6 +59,11 @@ Make sure you are not using a VPN, as it may block the installation of PIP in th
 The installation script will download all required packages, create the run_FcsIT script or run_FcsIT.bat (on Windows), and create the shortcuts. 
 
 ## Release notes
+
+#### v1.0.3
+ - Optional _light_ theme added,
+ - Settings window moved to the new class in the INIT.py file.
+
 #### v1.0.0
 This is an initial release of the FcsIT software
 ## License

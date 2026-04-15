@@ -24,8 +24,30 @@ with dpg.window(label='Settings',
                 pos=Settings_window['pos'],
                 no_resize=True,
                 show=False,
-                modal = True
+                modal = True,
+                autosize=True,
                ):
+    dpg.add_text('General settings',
+                 tag='General_settings_text')
+    dpg.add_separator(tag ='Settings_sep1',show=True)  
+    with dpg.group(tag='default_theme_group',
+               horizontal=True,
+               horizontal_spacing=inV.init_group_spacer
+              ):
+        dpg.add_text('Theme: ',tag = 'sett_theme_group_text_01')
+        dpg.add_combo(['dark','light'],
+                  label="",
+                  width=int(Settings_window['width']/3),
+                  height_mode=dpg.mvComboHeight_Large,
+                  tag='theme_choose',
+                  default_value='dark',
+                  callback=None,
+                  enabled=True
+                  )
+    dpg.add_separator(tag ='Settings_sep2',show=True)
+    dpg.add_text('FCS fitting settings',
+                 tag='FCS_fitting_settings_text')
+    dpg.add_separator(tag ='Settings_sep3',show=True)
     with dpg.table(header_row=False, show=True,pos = (0,50),tag='sett_table_00'):
         dpg.add_table_column(tag='Setts_column_1')
         dpg.add_table_column(tag='Setts_column_2')
@@ -277,6 +299,7 @@ with dpg.window(label='Settings',
                     
             with dpg.table_cell(tag='Setts_c2_r11_cell'):
                 pass
+    dpg.add_separator(tag ='Settings_sep4',show=True)
     with dpg.group(tag='default_quick_res_exp_group',
                    horizontal=True,
                    horizontal_spacing=inV.init_group_spacer
@@ -304,6 +327,13 @@ with dpg.window(label='Settings',
                          tag='default_quick_res_stat_group_text_2_tooltip'):
             dpg.add_text('Enter the filename without extension.',
                         tag='default_quick_res_stat_group_text_2_tooltip_text')
+    
+        
+
+        
+            
+        
+        
     with dpg.group(tag='Setts_buttons_group',
                    horizontal=True,
                    horizontal_spacing=inV.init_group_spacer,pos = (inV.init_left_indent,dpg.get_item_height('Settings_window')-24-inV.init_bottom_indent)):
@@ -329,6 +359,14 @@ dpg.bind_item_theme('Settings_window', 'Inactive_checkbox')
 
 
 settings_items = ['Settings_window',
+                  'General_settings_text',
+                  'Settings_sep1',
+                  'default_theme_group',
+                  'sett_theme_group_text_01',
+                  'theme_choose',
+                  'Settings_sep2',
+                  'FCS_fitting_settings_text',
+                  'Settings_sep3',
                   'sett_table_00',
                   'Setts_column_1',
                   'Setts_column_2',
@@ -372,6 +410,7 @@ settings_items = ['Settings_window',
                   'default_quick_res_exp_group',
                   'sett_group_01_text_01','default_quick_export_filename','sett_group_01_text_02',
                   'sett_group_01_text_02_tooltip','sett_group_01_text_02_tooltip_text',
+                  'Settings_sep4',
                   'default_quick_res_stat_group',
                   'default_quick_res_stat_group_text_1','default_quick_stst_filename','default_quick_res_stat_group_text_2',
                   'default_quick_res_stat_group_text_2_tooltip','default_quick_res_stat_group_text_2_tooltip_text',
