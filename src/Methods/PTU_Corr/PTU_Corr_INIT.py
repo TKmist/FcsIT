@@ -925,6 +925,7 @@ class _PTU_Corr_common:
                           'FCS info':{}
                          }
         time_bin = self.round_data(self.method_init.left_panel_drag_time_binning['default_time_bin'])
+        # print(time_bin)
         dpg.set_value('left_panel_drag_time_binning',time_bin)
         dpg.set_value('left_panel_drag_subs',self.method_init.left_panel_drag_subs['default_value'])
         dpg.set_value('left_panel_N_chunks',self.method_init.left_panel_N_chunks['default_value'])
@@ -3473,6 +3474,7 @@ class _PTU_Corr_common:
                         Time = self.fcs_data.timetrace[ch].time_interval.values[ind[0]:ind[1]]
                         occur = self.fcs_data.timetrace[ch].occurrences.values[ind[0]:ind[1]]
                         df = self.fcs_data.timetrace[ch][ind[0]:ind[1]]
+                        
                         cntr = self.fcs_data.calculate_chunk_count_rate(df)
                 elif len(chunks)>1:
                     CHNK = []
@@ -3483,6 +3485,7 @@ class _PTU_Corr_common:
                         df = self.fcs_data.timetrace[ch][ind[0]:ind[1]]
                         cntr = self.fcs_data.calculate_chunk_count_rate(df)
                         CHNK.append(cntr[0])
+                        print(df.head())
                     cntr = (np.mean(CHNK),np.std(CHNK,ddof=1))
                 chhunk_rates[ch]=cntr
         else:

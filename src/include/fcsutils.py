@@ -183,6 +183,7 @@ class load_fcs:
         trace = {}
         delta_t_ns = int(round(tb * 1e9))
         for ch in channels:
+            # print(OCCUR[ch]['time'])
             t_ns = np.floor(OCCUR[ch]['time'] + 0.5).astype(np.int64)
             offset = t_ns.min()
             bins_idx = (t_ns - offset) // delta_t_ns
@@ -192,6 +193,7 @@ class load_fcs:
                 'time_interval': time_axis,
                 'occurrences': counts
             })
+            # print(trace[ch])
         return trace
 
             
@@ -199,7 +201,9 @@ class load_fcs:
         channels = [ch for ch in PHOTS.keys() if ch.startswith('channel_')]
         cntr = {}
         dt_ns = int(round(tb * 1e9))
+        # print(dt_ns)
         dt_s  = dt_ns * 1e-9
+        # print(dt_s)
         for ch in channels:
             t_left_ns = TT[ch]['time_interval'].to_numpy()
             counts    = TT[ch]['occurrences'].to_numpy().astype(np.float64)
@@ -211,8 +215,11 @@ class load_fcs:
                 first_nonzero = np.argmax(counts > 0)
                 t_left_ns = t_left_ns[first_nonzero:]
                 counts    = counts[first_nonzero:]
-
+            # print(t_left_ns)
             x = (t_left_ns + dt_ns/2.0) * 1e-9
+            # x = (t_left_ns + dt_ns) * 1e-9
+            # x = t_left_ns * 1e-9
+            # print(x)
             y = np.cumsum(counts)
             n = x.size
             if n < 2:
@@ -226,7 +233,7 @@ class load_fcs:
             sigma2 = np.sum(resid**2) / max(n - 1, 1)
             se_r = np.sqrt(sigma2 / den)
             cntr[ch] = [float(r_hat), float(se_r)]
-
+        # print(cntr)
         return cntr
 
 
