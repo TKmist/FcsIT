@@ -972,6 +972,7 @@ class sett_window:
         self.OPTIONS = {}
         self.MountSettingsWindow()
         self.load_default_settings()
+        print('init')
 
         
     def load_default_settings(self):

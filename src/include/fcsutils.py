@@ -30,6 +30,126 @@ from Methods.PTU_Corr.include.correlation_methods import tttr2xfcs
 import time
 import socket
 
+from numba import njit, prange
+
+
+
+
+@njit(cache=True)
+def _fcs_build_block_idx_numba(M, n_bootstrap, block_size, seed):
+    np.random.seed(seed)
+
+    n_blocks = (M + block_size - 1) // block_size
+    out = np.empty((n_bootstrap, M), dtype=np.int64)
+
+    for b in range(n_bootstrap):
+        pos = 0
+        for _ in range(n_blocks):
+            start = np.random.randint(0, M)
+            for k in range(block_size):
+                if pos < M:
+                    out[b, pos] = (start + k) % M
+                    pos += 1
+
+    return out
+
+
+@njit(cache=True)
+def _fcs_nanmean_1d_numba(arr):
+    s = 0.0
+    c = 0
+
+    for i in range(arr.shape[0]):
+        v = arr[i]
+        if not np.isnan(v):
+            s += v
+            c += 1
+
+    if c == 0:
+        return np.nan
+
+    return s / c
+
+
+@njit(cache=True)
+def _fcs_nanstd_sample_1d_numba(arr, mean):
+    c = 0
+    s2 = 0.0
+
+    for i in range(arr.shape[0]):
+        v = arr[i]
+        if not np.isnan(v):
+            d = v - mean
+            s2 += d * d
+            c += 1
+
+    if c == 0:
+        return np.nan
+
+    if c == 1:
+        return 0.0
+
+    return np.sqrt(s2 / (c - 1))
+
+
+@njit(parallel=True, cache=True)
+def _fcs_compute_mean_std_kernel_numba(X, Ki_eps, block_idx):
+    Tn, M = X.shape
+    B, M2 = block_idx.shape
+
+    boot_mean_avg = np.empty(Tn, dtype=np.float64)
+    std_boot = np.empty(Tn, dtype=np.float64)
+
+    for i in prange(Tn):
+        any_positive_weight = False
+
+        for m in range(M):
+            if Ki_eps[i, m] > 0.0:
+                any_positive_weight = True
+                break
+
+        if not any_positive_weight:
+            boot_mean_avg[i] = np.nan
+            std_boot[i] = np.nan
+            continue
+
+        boot_means = np.empty(B, dtype=np.float64)
+
+        for b in range(B):
+            wsum = 0.0
+            num = 0.0
+            usum = 0.0
+            ucnt = 0
+
+            for j in range(M2):
+                k = block_idx[b, j]
+                v = X[i, k]
+
+                if not np.isnan(v):
+                    usum += v
+                    ucnt += 1
+
+                    w = Ki_eps[i, k]
+                    if w > 0.0:
+                        num += v * w
+                        wsum += w
+
+            if wsum > 0.0:
+                boot_means[b] = num / wsum
+            elif ucnt > 0:
+                boot_means[b] = usum / ucnt
+            else:
+                boot_means[b] = np.nan
+
+        mu = _fcs_nanmean_1d_numba(boot_means)
+        sd = _fcs_nanstd_sample_1d_numba(boot_means, mu)
+
+        boot_mean_avg[i] = mu
+        std_boot[i] = sd
+
+    return boot_mean_avg, std_boot
+
+
 class load_fcs:
     def __init__(self,file,time_bin):
         
@@ -64,7 +184,7 @@ class load_fcs:
             self.calculate_decays = self.timed(self.calculate_decays)
 
             
-            self.PHOTONS,self.tau_resolution = self.calculate_photons()
+            self.PHOTONS, self.tau_resolution = self.calculate_photons()
             self.occurence = self.Photons_occurence(self.PHOTONS)
             self.timetrace = self.bin_time_data(self.PHOTONS,self.time_bin,self.occurence)
             self.count_rate = self.calculate_count_rate(self.PHOTONS,self.timetrace,self.time_bin)
@@ -187,6 +307,7 @@ class load_fcs:
             t_ns = np.floor(OCCUR[ch]['time'] + 0.5).astype(np.int64)
             offset = t_ns.min()
             bins_idx = (t_ns - offset) // delta_t_ns
+            
             counts = np.bincount(bins_idx, minlength=bins_idx.max() + 1)
             time_axis = (offset + np.arange(counts.size, dtype=np.int64) * delta_t_ns).astype(np.float64)
             trace[ch] = pd.DataFrame({
@@ -194,46 +315,42 @@ class load_fcs:
                 'occurrences': counts
             })
             # print(trace[ch])
+            # print('offset',offset)
+            # print('bins_idx',bins_idx)
+            # print('counts',counts)
         return trace
 
             
     def calculate_count_rate(self, PHOTS, TT, tb, drop_leading_zeros=False):
         channels = [ch for ch in PHOTS.keys() if ch.startswith('channel_')]
         cntr = {}
+    
         dt_ns = int(round(tb * 1e9))
-        # print(dt_ns)
-        dt_s  = dt_ns * 1e-9
-        # print(dt_s)
+        dt_s = dt_ns * 1e-9
+    
         for ch in channels:
-            t_left_ns = TT[ch]['time_interval'].to_numpy()
-            counts    = TT[ch]['occurrences'].to_numpy().astype(np.float64)
+            counts = TT[ch]['occurrences'].to_numpy().astype(np.float64)
+    
             if counts.size == 0 or counts.sum() == 0:
                 cntr[ch] = [0.0, 0.0]
                 continue
-
+    
             if drop_leading_zeros:
                 first_nonzero = np.argmax(counts > 0)
-                t_left_ns = t_left_ns[first_nonzero:]
-                counts    = counts[first_nonzero:]
-            # print(t_left_ns)
-            x = (t_left_ns + dt_ns/2.0) * 1e-9
-            # x = (t_left_ns + dt_ns) * 1e-9
-            # x = t_left_ns * 1e-9
-            # print(x)
-            y = np.cumsum(counts)
-            n = x.size
-            if n < 2:
+                counts = counts[first_nonzero:]
+    
+            total_counts = counts.sum()
+            total_time_s = counts.size * dt_s
+    
+            if total_time_s <= 0:
                 cntr[ch] = [0.0, 0.0]
                 continue
-
-            num = np.sum(x * y)
-            den = np.sum(x * x)
-            r_hat = num / den
-            resid = y - r_hat * x
-            sigma2 = np.sum(resid**2) / max(n - 1, 1)
-            se_r = np.sqrt(sigma2 / den)
+    
+            r_hat = total_counts / total_time_s
+            se_r = np.sqrt(total_counts) / total_time_s
+    
             cntr[ch] = [float(r_hat), float(se_r)]
-        # print(cntr)
+    
         return cntr
 
 
@@ -591,25 +708,44 @@ class load_fcs:
 
 
     def _CORRELATE(self,chunks,nsub,npoints,tau_min,tau_max,meta,sender):
+        t_total = time.perf_counter()
+        t_filter = 0.0
+        t_prepare = 0.0
+        t_tttr = 0.0
+        t_rebin = 0.0
+        t_mean = 0.0
+        t_df = 0.0
         DictOfChunks = {}
         _AUTOTIME = []
         _AUTONORM = []
         _ChunkLength = []
+        t0 = time.perf_counter()
         centers, edges = self.make_log_grid_ms(tmin_ms=tau_min, tmax_ms=tau_max, points_per_decade=nsub)
         window=0.3*nsub
+        t_df += time.perf_counter() - t0
         for i,chnk in enumerate(chunks):
             if i == 0:
                 label0 = dpg.get_item_label(sender) 
             label = label0 + ' chunk '+str(i+1)+' of '+str(len(chunks))
             dpg.set_item_label(sender,label)
+
+            t0 = time.perf_counter()
+            
             sg = self.weight_filtering_chunk(chnk,meta)
-            time,num = self.prepare_for_corr(sg)
-            chunklength = (time[-1]-time[0]) / 1_000_000.0
-            autotime, autoNorm = self.correlate_chunk(time, num, nsub,npoints,tau_min,tau_max)
+            t_filter += time.perf_counter() - t0
+            t0 = time.perf_counter()
+            ttime,num = self.prepare_for_corr(sg)
+            chunklength = (ttime[-1]-ttime[0]) / 1_000_000.0
+            t_prepare += time.perf_counter() - t0
+            t0 = time.perf_counter()
+            autotime, autoNorm = self.correlate_chunk(ttime, num, nsub,npoints,tau_min,tau_max)
+
+            t_tttr += time.perf_counter() - t0
+            
             _AUTOTIME.append(autotime)
             _AUTONORM.append(autoNorm)
             _ChunkLength.append(chunklength)
-        
+        t0 = time.perf_counter()
         min_len = min(len(t) for t in _AUTOTIME)
         _AUTOTIME = [t[:min_len] for t in _AUTOTIME]
         _AUTONORM = [a[:min_len] for a in _AUTONORM]
@@ -618,6 +754,8 @@ class load_fcs:
         autoNorm_ch_2 = pd.DataFrame(rebinedTime,columns=['time'])
         CrossNorm_ch_1 = pd.DataFrame(rebinedTime,columns=['time'])
         CrossNorm_ch_2 = pd.DataFrame(rebinedTime,columns=['time'])
+        t_df += time.perf_counter() - t0
+        t0 = time.perf_counter()
         # chan = list(meta['TCSPC info']['Filters'].keys())[0]
         for i,chunk in enumerate(_AUTONORM):
             # if chan.endswith('_0'):
@@ -626,7 +764,8 @@ class load_fcs:
             autoNorm_ch_2['ACF_chunk_'+str(i)]=self.rebin_chunk_to_grid(_AUTOTIME[0],chunk[:,1,1], centers, edges)
             CrossNorm_ch_1['CCF_chunk_'+str(i)]=self.rebin_chunk_to_grid(_AUTOTIME[0],chunk[:,0,1], centers, edges)
             CrossNorm_ch_2['CCF_chunk_'+str(i)]=self.rebin_chunk_to_grid(_AUTOTIME[0],chunk[:,1,0], centers, edges)
-                
+        t_rebin += time.perf_counter() - t0
+        t0 = time.perf_counter()
         ChunkedCorrelationCurves_channel_1 = [autoNorm_ch_1,CrossNorm_ch_1]
         ChunkedCorrelationCurves_channel_2 = [autoNorm_ch_2,CrossNorm_ch_2]
         for i,correlation_curves in enumerate(ChunkedCorrelationCurves_channel_1):
@@ -646,6 +785,7 @@ class load_fcs:
         DictOfChunks['Channel_1'] = {'ACF_2':ChunkedCorrelationCurves_channel_2[0],
                                              'CCF_2':ChunkedCorrelationCurves_channel_2[1]
                                              }
+        t0 = time.perf_counter()
         cols_ch_1 = [col for col in autoNorm_ch_1.columns if col.startswith('ACF_chunk_')]
         cols_ch_2 = [col for col in autoNorm_ch_2.columns if col.startswith('ACF_chunk_')]
         ccols_ch_1 = [col for col in CrossNorm_ch_1.columns if col.startswith('CCF_chunk_')]
@@ -654,8 +794,12 @@ class load_fcs:
             autoNorm_ch_1['MEAN'] = autoNorm_ch_1[[col for col in autoNorm_ch_1.columns if col.startswith('ACF_chunk_')][0]]
             CrossNorm_ch_1['MEAN']=CrossNorm_ch_1[[col for col in CrossNorm_ch_1.columns if col.startswith('CCF_chunk_')][0]]
         else:
-            auto_ch1 = self._compute_MEAN_STD(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
-            Cross_ch1 =  self._compute_MEAN_STD(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
+            # auto_ch1 = self._compute_MEAN_STD(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
+            # Cross_ch1 =  self._compute_MEAN_STD(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
+            auto_ch1 = self._compute_MEAN_STD_numba(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
+            Cross_ch1 =  self._compute_MEAN_STD_numba(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
+            # print(auto_ch1[0].head(),auto_ch1[1].head())
+            # print(auto_ch1_[0].head(),auto_ch1_[1].head())
             autoNorm_ch_1['MEAN'] = auto_ch1[0]
             autoNorm_ch_1['SE'] = auto_ch1[1]
             CrossNorm_ch_1['MEAN'] = Cross_ch1[0]
@@ -664,20 +808,118 @@ class load_fcs:
             autoNorm_ch_2['MEAN'] = autoNorm_ch_2[[col for col in autoNorm_ch_2.columns if col.startswith('ACF_chunk_')][0]]
             CrossNorm_ch_2['MEAN']=CrossNorm_ch_2[[col for col in CrossNorm_ch_2.columns if col.startswith('CCF_chunk_')][0]]
         else:
-            auto_ch2 = self._compute_MEAN_STD(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
-            Cross_ch2 =  self._compute_MEAN_STD(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
+            # auto_ch2 = self._compute_MEAN_STD(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
+            # Cross_ch2 =  self._compute_MEAN_STD(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
+            auto_ch2 = self._compute_MEAN_STD_numba(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
+            Cross_ch2 =  self._compute_MEAN_STD_numba(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
             autoNorm_ch_2['MEAN'] = auto_ch2[0]
             autoNorm_ch_2['SE'] = auto_ch2[1]
             CrossNorm_ch_2['MEAN'] = Cross_ch2[0]
             CrossNorm_ch_2['SE'] = Cross_ch2[1]
-
+        t_mean += time.perf_counter() - t0
         autoNorm_ch_1 = autoNorm_ch_1[['time','MEAN','SE']]
         autoNorm_ch_2 = autoNorm_ch_2[['time','MEAN','SE']]
         CrossNorm_ch_1 = CrossNorm_ch_1[['time','MEAN','SE']]
         CrossNorm_ch_2 = CrossNorm_ch_2[['time','MEAN','SE']]
+
+        print("----- _CORRELATE profile -----")
+        print(f"filtering:        {t_filter:.4f}s")
+        print(f"prepare_for_corr: {t_prepare:.4f}s")
+        print(f"tttr2xfcs:        {t_tttr:.4f}s")
+        print(f"DataFrame/setup:  {t_df:.4f}s")
+        print(f"rebin:            {t_rebin:.4f}s")
+        print(f"MEAN/STD:         {t_mean:.4f}s")
+        print(f"total measured:   {time.perf_counter() - t_total:.4f}s")
+        print("------------------------------")
+        
         return autoNorm_ch_1,autoNorm_ch_2,CrossNorm_ch_1,CrossNorm_ch_2,DictOfChunks
 
     
+    ############################################################################################
+    ######## NUMBA bootstrap                                                          ##########
+    ############################################################################################
 
 
+    def _compute_MEAN_STD_numba(
+        self,
+        df,
+        cols,
+        tau_col='time',
+        n_bootstrap=5001,
+        block_size=3,
+        random_state=None,
+        chunk_lengths_sec=None,
+        bin_width_col=None,
+    ):
+        M = len(cols)
     
+        if M == 0:
+            nan_series = pd.Series(np.nan, index=df.index, name='MEAN')
+            return nan_series, nan_series.rename('SE')
+    
+        if M == 1:
+            mean_series = df[cols[0]].rename('MEAN')
+            std_series = pd.Series(0.0, index=df.index, name='SE')
+            return mean_series, std_series
+    
+        X = df[cols].to_numpy(dtype=np.float64)
+        tau = df[tau_col].to_numpy(dtype=np.float64)
+        Tn = tau.shape[0]
+    
+        if bin_width_col is not None:
+            dtaus = df[bin_width_col].to_numpy(dtype=np.float64)
+        else:
+            dtaus = np.empty(Tn, dtype=np.float64)
+    
+            if Tn == 1:
+                dtaus[0] = max(tau[0], 1e-12)
+            else:
+                dtaus[1:-1] = 0.5 * (tau[2:] - tau[:-2])
+                dtaus[0] = tau[1] - tau[0]
+                dtaus[-1] = tau[-1] - tau[-2]
+    
+            dtaus = np.clip(dtaus, 1e-12, None)
+    
+        if chunk_lengths_sec is None:
+            tau_max = float(np.nanmax(tau))
+            T_i = np.full(M, 2.0 * tau_max, dtype=np.float64)
+        else:
+            T_i = np.asarray(chunk_lengths_sec, dtype=np.float64)
+    
+            if T_i.shape[0] != M:
+                raise ValueError(
+                    f"chunk_lengths_sec ma długość {T_i.shape[0]}, "
+                    f"a liczba kolumn chunków wynosi {M}."
+                )
+    
+        Ki = np.floor((T_i[None, :] - tau[:, None]) / dtaus[:, None])
+        Ki_eps = np.where(Ki > 0.0, Ki, 0.0).astype(np.float64, copy=False)
+    
+        seed = 0 if random_state is None else int(random_state)
+    
+        block_idx = _fcs_build_block_idx_numba(
+            M,
+            int(n_bootstrap),
+            int(block_size),
+            seed,
+        )
+    
+        boot_mean_avg, std_boot = _fcs_compute_mean_std_kernel_numba(
+            X,
+            Ki_eps,
+            block_idx,
+        )
+    
+        if block_size > 1 and M > block_size:
+            overlap_factor = np.sqrt(M / (M - block_size + 1.0))
+            std_boot *= overlap_factor
+    
+        finite = np.isfinite(std_boot)
+        if not np.all(finite):
+            med = np.nanmedian(std_boot[finite]) if np.any(finite) else 0.0
+            std_boot = np.where(finite, std_boot, med)
+    
+        mean_series = pd.Series(boot_mean_avg, index=df.index, name='MEAN')
+        std_series = pd.Series(std_boot, index=df.index, name='SE')
+    
+        return mean_series, std_series
