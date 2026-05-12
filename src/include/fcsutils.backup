@@ -30,10 +30,9 @@ from Methods.PTU_Corr.include.correlation_methods import tttr2xfcs
 import time
 import socket
 
-
 from numba import njit, prange
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 
 @njit(cache=True)
@@ -717,53 +716,35 @@ class load_fcs:
         t_mean = 0.0
         t_df = 0.0
         DictOfChunks = {}
-        # _AUTOTIME = []
-        # _AUTONORM = []
-        # _ChunkLength = []
+        _AUTOTIME = []
+        _AUTONORM = []
+        _ChunkLength = []
         t0 = time.perf_counter()
         centers, edges = self.make_log_grid_ms(tmin_ms=tau_min, tmax_ms=tau_max, points_per_decade=nsub)
         window=0.3*nsub
         t_df += time.perf_counter() - t0
+        for i,chnk in enumerate(chunks):
+            if i == 0:
+                label0 = dpg.get_item_label(sender) 
+            label = label0 + ' chunk '+str(i+1)+' of '+str(len(chunks))
+            dpg.set_item_label(sender,label)
 
-        label0 = dpg.get_item_label(sender) if sender is not None else "Correlation"
+            t0 = time.perf_counter()
+            
+            sg = self.weight_filtering_chunk(chnk,meta)
+            t_filter += time.perf_counter() - t0
+            t0 = time.perf_counter()
+            ttime,num = self.prepare_for_corr(sg)
+            chunklength = (ttime[-1]-ttime[0]) / 1_000_000.0
+            t_prepare += time.perf_counter() - t0
+            t0 = time.perf_counter()
+            autotime, autoNorm = self.correlate_chunk(ttime, num, nsub,npoints,tau_min,tau_max)
 
-        max_workers = min(len(chunks), os.cpu_count() or 1)
-        results = [None] * len(chunks)
-        t_parallel_wait0 = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = [
-                ex.submit(
-                    self._correlate_single_chunk_worker,
-                    i,
-                    chnk,
-                    meta,
-                    nsub,
-                    npoints,
-                    tau_min,
-                    tau_max,
-                )
-                for i, chnk in enumerate(chunks)
-            ]
-        
-            total_chunks = len(futures)
-        
-            for done, fut in enumerate(as_completed(futures), start=1):
-                i, autotime, autoNorm, chunklength,tf, tp, tt = fut.result()
-                results[i] = (autotime, autoNorm, chunklength)
-                t_filter += tf
-                t_prepare += tp
-                t_tttr += tt
-                if sender is not None:
-                    dpg.set_item_label(
-                        sender,
-                        f"{label0} | calculated {done}/{total_chunks} chunks"
-                    )
-        t_parallel_wall = time.perf_counter() - t_parallel_wait0
-        _AUTOTIME = [r[0] for r in results]
-        _AUTONORM = [r[1] for r in results]
-        _ChunkLength = [r[2] for r in results]
-
-        
+            t_tttr += time.perf_counter() - t0
+            
+            _AUTOTIME.append(autotime)
+            _AUTONORM.append(autoNorm)
+            _ChunkLength.append(chunklength)
         t0 = time.perf_counter()
         min_len = min(len(t) for t in _AUTOTIME)
         _AUTOTIME = [t[:min_len] for t in _AUTOTIME]
@@ -849,10 +830,6 @@ class load_fcs:
         print(f"rebin:            {t_rebin:.4f}s")
         print(f"MEAN/STD:         {t_mean:.4f}s")
         print(f"total measured:   {time.perf_counter() - t_total:.4f}s")
-        print(f"parallel wall:    {t_parallel_wall:.4f}s")
-        print(f"worker filtering: {t_filter:.4f}s")
-        print(f"worker prepare:   {t_prepare:.4f}s")
-        print(f"worker tttr2xfcs: {t_tttr:.4f}s")
         print("------------------------------")
         
         return autoNorm_ch_1,autoNorm_ch_2,CrossNorm_ch_1,CrossNorm_ch_2,DictOfChunks
@@ -946,37 +923,3 @@ class load_fcs:
         std_series = pd.Series(std_boot, index=df.index, name='SE')
     
         return mean_series, std_series
-
-
-
-
-    def _correlate_single_chunk_worker(
-        self,
-        i,
-        chnk,
-        meta,
-        nsub,
-        npoints,
-        tau_min,
-        tau_max,
-    ):
-        t0 = time.perf_counter()
-        sg = self.weight_filtering_chunk(chnk, meta)
-        time_arr, num = self.prepare_for_corr(sg)
-        t_filter = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
-        chunklength = (time_arr[-1] - time_arr[0]) / 1_000_000.0
-        t_prepare = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
-        autotime, autoNorm = self.correlate_chunk(
-            time_arr,
-            num,
-            nsub,
-            npoints,
-            tau_min,
-            tau_max,
-        )
-        t_tttr = time.perf_counter() - t0
-        return i, autotime, autoNorm, chunklength, t_filter, t_prepare, t_tttr
