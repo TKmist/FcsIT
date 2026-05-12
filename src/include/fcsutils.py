@@ -582,6 +582,16 @@ class load_fcs:
     
     def correlate_chunk(self, t, num, nsub, npoints, tau_min, tau_max):
         autocorr, autotime = tttr2xfcs(t, num, 0, npoints, nsub, tau_min, tau_max)
+        # autocorr, autotime = tttr2xfcs_numba(t, num, 0, npoints, nsub, tau_min, tau_max)
+
+        # auto_old, tau_old = tttr2xfcs(t, num, 0, npoints, nsub, tau_min, tau_max)
+        # auto_new, tau_new = tttr2xfcs_numba(t, num, 0, npoints, nsub, tau_min, tau_max)
+        
+        # print('allclose',np.allclose(tau_old, tau_new, rtol=1e-12, atol=1e-12))
+        # print(np.nanmax(np.abs(auto_old - auto_new)))
+        # print(np.nanmax(np.abs(auto_old - auto_new) / (np.abs(auto_old) + 1e-12)))
+
+        
         T = float(np.max(t) - np.min(t))      # dokładny czas, bez ceil/floor
         count0 = float(np.sum(num[:, 0]))
         count1 = float(np.sum(num[:, 1]))
@@ -841,20 +851,6 @@ class load_fcs:
         CrossNorm_ch_1 = CrossNorm_ch_1[['time','MEAN','SE']]
         CrossNorm_ch_2 = CrossNorm_ch_2[['time','MEAN','SE']]
 
-        print("----- _CORRELATE profile -----")
-        print(f"filtering:        {t_filter:.4f}s")
-        print(f"prepare_for_corr: {t_prepare:.4f}s")
-        print(f"tttr2xfcs:        {t_tttr:.4f}s")
-        print(f"DataFrame/setup:  {t_df:.4f}s")
-        print(f"rebin:            {t_rebin:.4f}s")
-        print(f"MEAN/STD:         {t_mean:.4f}s")
-        print(f"total measured:   {time.perf_counter() - t_total:.4f}s")
-        print(f"parallel wall:    {t_parallel_wall:.4f}s")
-        print(f"worker filtering: {t_filter:.4f}s")
-        print(f"worker prepare:   {t_prepare:.4f}s")
-        print(f"worker tttr2xfcs: {t_tttr:.4f}s")
-        print("------------------------------")
-        
         return autoNorm_ch_1,autoNorm_ch_2,CrossNorm_ch_1,CrossNorm_ch_2,DictOfChunks
 
     
@@ -978,5 +974,9 @@ class load_fcs:
             tau_min,
             tau_max,
         )
+
+        
+
+        
         t_tttr = time.perf_counter() - t0
         return i, autotime, autoNorm, chunklength, t_filter, t_prepare, t_tttr

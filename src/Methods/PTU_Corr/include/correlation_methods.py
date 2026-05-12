@@ -1,6 +1,4 @@
 import numpy as np
-
-
 """
 This file is a modified version of the source code originally written by
 Dominic Waithe as a part of the FCS Bulk Correlation Software project.
@@ -200,3 +198,4 @@ def tttr2xfcs (y,num,NcascStart,NcascEnd, Nsub,tau_min,tau_max):
     auto = auto[idauto, :, :]
 
     return auto, autotime
+
