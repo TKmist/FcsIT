@@ -21,7 +21,7 @@
   <a href="https://github.com/TKmist/FcsIT/releases/latest">
     <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download" />
   </a>
-  <a href="https://doi.org/10.5281/zenodo.19351493"><img src="https://zenodo.org/badge/1194606839.svg" alt="DOI"/></a>
+  <a href="https://doi.org/10.5281/zenodo.19589716"><img src="https://zenodo.org/badge/1194606839.svg" alt="DOI"/></a>
 </p>
 
 <p align="center">
@@ -60,7 +60,10 @@ The installation script will download all required packages, create the run_FcsI
 
 ## Release notes
 
+#### v1.0.4
+ - Optimalisation of operations on chunks,
 #### v1.0.3
+
  - Optional _light_ theme added,
  - Settings window moved to the new class in the INIT.py file.
 

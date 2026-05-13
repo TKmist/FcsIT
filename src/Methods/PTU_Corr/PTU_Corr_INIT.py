@@ -925,6 +925,7 @@ class _PTU_Corr_common:
                           'FCS info':{}
                          }
         time_bin = self.round_data(self.method_init.left_panel_drag_time_binning['default_time_bin'])
+        # print(time_bin)
         dpg.set_value('left_panel_drag_time_binning',time_bin)
         dpg.set_value('left_panel_drag_subs',self.method_init.left_panel_drag_subs['default_value'])
         dpg.set_value('left_panel_N_chunks',self.method_init.left_panel_N_chunks['default_value'])
@@ -2593,6 +2594,7 @@ class _PTU_Corr_common:
         
         
     def Correlating(self,sender):
+        # t0 = time.perf_counter()
         is_Two_channel = len(self.channels) == 2
         bintime = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
         npoints = dpg.get_value('left_panel_drag_subs')
@@ -2602,8 +2604,14 @@ class _PTU_Corr_common:
         nsub = int(np.floor(npoints / decades))
         nsub = max(1, nsub)
         chunks = list(self.META_data['TT info']['chunks'].keys())
-        self.autoNorm_ch_1,self.autoNorm_ch_2,self.CrossNorm_ch_1,self.CrossNorm_ch_2,self.DictOfChunks =self.fcs_data._CORRELATE(chunks,nsub,npoints,tau_min,tau_max,self.META_data,sender)
+        # t_setup = time.perf_counter() - t0
 
+        # t0 = time.perf_counter()
+        self.autoNorm_ch_1,self.autoNorm_ch_2,self.CrossNorm_ch_1,self.CrossNorm_ch_2,self.DictOfChunks =self.fcs_data._CORRELATE(chunks,nsub,npoints,tau_min,tau_max,self.META_data,sender)
+        # t_core = time.perf_counter() - t0
+
+        # print(f"Correlating setup: {t_setup:.4f}s")
+        # print(f"_CORRELATE core:   {t_core:.4f}s")
             
     def callback_crossCorr_check(self,sender,app_data):
         is_Two_channel = len(self.channels) == 2
@@ -3473,6 +3481,7 @@ class _PTU_Corr_common:
                         Time = self.fcs_data.timetrace[ch].time_interval.values[ind[0]:ind[1]]
                         occur = self.fcs_data.timetrace[ch].occurrences.values[ind[0]:ind[1]]
                         df = self.fcs_data.timetrace[ch][ind[0]:ind[1]]
+                        
                         cntr = self.fcs_data.calculate_chunk_count_rate(df)
                 elif len(chunks)>1:
                     CHNK = []
@@ -3483,6 +3492,7 @@ class _PTU_Corr_common:
                         df = self.fcs_data.timetrace[ch][ind[0]:ind[1]]
                         cntr = self.fcs_data.calculate_chunk_count_rate(df)
                         CHNK.append(cntr[0])
+                        print(df.head())
                     cntr = (np.mean(CHNK),np.std(CHNK,ddof=1))
                 chhunk_rates[ch]=cntr
         else:
