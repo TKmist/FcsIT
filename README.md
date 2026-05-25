@@ -10,7 +10,7 @@
   </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-v1.0.3-green" />
+  <img src="https://img.shields.io/badge/version-v1.0.5-green" />
   
 </p>
 <p align="center">
@@ -60,6 +60,8 @@ The installation script will download all required packages, create the run_FcsI
 
 ## Release notes
 
+#### v1.0.5
+ - Python embedded folder fixed.
 #### v1.0.4
  - Optimalisation of operations on chunks,
 #### v1.0.3
