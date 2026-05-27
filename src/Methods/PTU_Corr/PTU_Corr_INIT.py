@@ -400,7 +400,48 @@ class _PTU_Corr_common:
                 ch["tcspc"]["ch1"][1] = e1
                 ch["tcspc"]["ch2"][0] = s2
                 ch["tcspc"]["ch2"][1] = e2
+    def _recompute_photon_for_all_chunks(self):
     
+        channels = [
+            ch for ch in self.fcs_data.PHOTONS.keys()
+            if ch.startswith("channel_")
+        ]
+    
+        channels.sort()
+    
+        global_resolution = self.fcs_data.PHOTONS['GlobalResolution']
+    
+        for chunk_name, chunk in self.chunks.items():
+    
+            # chunk boundaries z dragline/time trace
+            t0 = chunk["values"][0]   # [s]
+            t1 = chunk["values"][1]   # [s]
+    
+            if "photon" not in chunk:
+                chunk["photon"] = {}
+    
+            for ch in channels:
+    
+                if ch == "channel_0":
+                    chn = "ch1"
+    
+                elif ch == "channel_1":
+                    chn = "ch2"
+    
+                else:
+                    continue
+    
+                # absolutny czas fotonów [s]
+                time_s = (
+                    self.fcs_data.PHOTONS[ch]['sync'].astype(np.float64)
+                    * global_resolution
+                )
+    
+                # mapowanie zakresu czasu -> zakres fotonów
+                i0 = np.searchsorted(time_s, t0, side="left")
+                i1 = np.searchsorted(time_s, t1, side="right")
+    
+                chunk["photon"][chn] = [int(i0), int(i1)]
     def add_chunks(self, reset: bool = True):
         """
         Szybkie, deterministyczne tworzenie/przebudowa dragline’ów chunków.
@@ -416,7 +457,7 @@ class _PTU_Corr_common:
     
         nchunks = int(dpg.get_value('left_panel_N_chunks'))
         xdata = self.TT_xdata_1  # rosnące
-    
+        print(len(xdata))
         # --- init cache tagów (żeby nie używać dpg.get_aliases())
         if not hasattr(self, "_chunk_draglines"):
             self._chunk_draglines = []
@@ -441,7 +482,7 @@ class _PTU_Corr_common:
     
         # --- 4) węzły TT (indeksy)
         nodes = np.linspace(0, len(xdata), nchunks + 1).astype(int)
-    
+        print('nodes',nodes)
         # --- 5) jeśli reset=False, ale chunks brak / zła długość -> wymuś reset
         if not reset:
             if (not hasattr(self, "chunks")) or (not isinstance(self.chunks, dict)) or (len(self.chunks) != nchunks):
@@ -548,9 +589,11 @@ class _PTU_Corr_common:
     
         # --- 9) show/hide (OK)
         self.show_chunks_drag_lines("Custom_chunks_check", dpg.get_value("Custom_chunks_check"),allow_reset=False)
-        self._build_tcspc_time_cache()            # aktualny dataset
-        self._recompute_tcspc_for_all_chunks()    # wypełnij tcspc od razu
-    
+        if self.fcs_data.PHOTONS['Mode'] != 'CW':
+            self._build_tcspc_time_cache()            # aktualny dataset
+            self._recompute_tcspc_for_all_chunks()    # wypełnij tcspc od razu
+        else:
+            self._recompute_photon_for_all_chunks()
     # def add_chunks(self):
     #     nchunks = int(dpg.get_value('left_panel_N_chunks'))
     #     xdata = self.TT_xdata_1
@@ -933,43 +976,115 @@ class _PTU_Corr_common:
         
         self.fcs_data = load_fcs(file,time_bin)
         self.channels = self.fcs_data.timetrace.keys()
+
+        
         
         if len(self.channels) == 1:
-            self.TCSCP_draglines['TCSPC_L_dline_ch1']=self.TCSCP_draglines_init['TCSPC_L_dline_ch1']
-            self.TCSCP_draglines['TCSPC_U_dline_ch1']=self.TCSCP_draglines_init['TCSPC_U_dline_ch1']
-            self.TCSCP_draglines['TCSPC_L_dline_ch2']=self.TCSCP_draglines_init['TCSPC_L_dline_ch2']
-            self.TCSCP_draglines['TCSPC_U_dline_ch2']=self.TCSCP_draglines_init['TCSPC_U_dline_ch2']
+            
+                
+            
+            if self.fcs_data.PHOTONS['Mode'] != 'CW':
+                dpg.show_item('Anal_window_TCSPC_tab')
+                self.TCSPC_subplots['columns'] = 1
+                self.TCSPC_subplots['column_ratios'] = [1.00]
+                self.TCSCP_draglines['TCSPC_L_dline_ch1']=self.TCSCP_draglines_init['TCSPC_L_dline_ch1']
+                self.TCSCP_draglines['TCSPC_U_dline_ch1']=self.TCSCP_draglines_init['TCSPC_U_dline_ch1']
+                self.TCSCP_draglines['TCSPC_L_dline_ch2']=self.TCSCP_draglines_init['TCSPC_L_dline_ch2']
+                self.TCSCP_draglines['TCSPC_U_dline_ch2']=self.TCSCP_draglines_init['TCSPC_U_dline_ch2']
+                dpg.set_value('TCSPC_L_dline_ch1',self.TCSCP_draglines['TCSPC_L_dline_ch1'])
+                dpg.set_value('TCSPC_U_dline_ch1',self.TCSCP_draglines['TCSPC_U_dline_ch1'])
+                dpg.configure_item('TCSPC_subplots',columns = self.TCSPC_subplots['columns'],column_ratios = self.TCSPC_subplots['column_ratios'])
+                
+                dpg.show_item('TCSPC_plt_ch_1')
+                dpg.hide_item('TCSPC_plt_ch_2')
+
+                dpg.set_value('TCSPC_timegate_check',True)
+                dpg.set_value('TCSPC_BG_correction_check',False)
+                # self.callback_calc_fltr_one(sender = 'Calculate_filter_once_button')
+                dpg.configure_item('Calculate_filter_once_button',enabled=True)
+                dpg.configure_item('Calculate_filter_all_button',enabled=True)
+                dpg.show_item('Calculate_filter_once_button')
+                dpg.show_item('Calculate_filter_all_button')
+
+                
+            else:
+                dpg.hide_item('TCSPC_plt_ch_1')
+                dpg.hide_item('Anal_window_TCSPC_tab')
+                
+                dpg.set_value('TCSPC_timegate_check',False)
+                dpg.set_value('TCSPC_BG_correction_check',False)
+                self.callback_calc_fltr_one('Calculate_filter_once_button',None)
+                dpg.configure_item('Calculate_filter_once_button',enabled=False)
+                dpg.configure_item('Calculate_filter_all_button',enabled=False)
+                dpg.hide_item('Calculate_filter_once_button')
+                dpg.hide_item('Calculate_filter_all_button')
+                dpg.configure_item('Calculate_correlation_once_button',enabled=True)
+                dpg.configure_item('Calculate_correlation_all_button',enabled=True)
+                
             self.TT_xdata_1=(self.fcs_data.timetrace[list(self.channels)[0]].time_interval*1e-9).values.astype(float)
             self.TT_ydata_1=(self.fcs_data.timetrace[list(self.channels)[0]].occurrences).values.astype(float)
             self.shade_data_1=[self.TT_xdata_1,
                                np.zeros(len(self.TT_xdata_1)),
                                np.zeros(len(self.TT_xdata_1))
                                ]
-            self.TCSPC_subplots['columns'] = 1
-            self.TCSPC_subplots['column_ratios'] = [1.00]
-            dpg.configure_item('TCSPC_subplots',columns = self.TCSPC_subplots['columns'],column_ratios = self.TCSPC_subplots['column_ratios'])
-            dpg.hide_item('TCSPC_plt_ch_2')
+            
             self.FCS_subplots['columns'] = 1
             self.FCS_subplots['column_ratios'] = [1.00]
             dpg.configure_item('FCS_subplots',columns = self.FCS_subplots['columns'],column_ratios = self.FCS_subplots['column_ratios'])
             dpg.hide_item('FCS_plt_ch_2')
             dpg.set_value('FCS_cross_check',False)
             dpg.hide_item('FCS_cross_check')
-            dpg.set_value('TCSPC_L_dline_ch1',self.TCSCP_draglines['TCSPC_L_dline_ch1'])
-            dpg.set_value('TCSPC_U_dline_ch1',self.TCSCP_draglines['TCSPC_U_dline_ch1'])
+            
             
             
         elif len(self.channels) == 2:
-            if self.fcs_data.PHOTONS['Mode'] == 'PIE':
-                self.TCSCP_draglines['TCSPC_L_dline_ch1']=self.TCSCP_draglines_init['TCSPC_PIE_L_dline_ch1']
-                self.TCSCP_draglines['TCSPC_U_dline_ch1']=self.TCSCP_draglines_init['TCSPC_PIE_U_dline_ch1']
-                self.TCSCP_draglines['TCSPC_L_dline_ch2']=self.TCSCP_draglines_init['TCSPC_PIE_L_dline_ch2']
-                self.TCSCP_draglines['TCSPC_U_dline_ch2']=self.TCSCP_draglines_init['TCSPC_PIE_U_dline_ch2']
+            if self.fcs_data.PHOTONS['Mode'] != 'CW':
+                dpg.show_item('Anal_window_TCSPC_tab')
+                if self.fcs_data.PHOTONS['Mode'] == 'PIE':
+                    self.TCSCP_draglines['TCSPC_L_dline_ch1']=self.TCSCP_draglines_init['TCSPC_PIE_L_dline_ch1']
+                    self.TCSCP_draglines['TCSPC_U_dline_ch1']=self.TCSCP_draglines_init['TCSPC_PIE_U_dline_ch1']
+                    self.TCSCP_draglines['TCSPC_L_dline_ch2']=self.TCSCP_draglines_init['TCSPC_PIE_L_dline_ch2']
+                    self.TCSCP_draglines['TCSPC_U_dline_ch2']=self.TCSCP_draglines_init['TCSPC_PIE_U_dline_ch2']
+                else:
+                    self.TCSCP_draglines['TCSPC_L_dline_ch1']=self.TCSCP_draglines_init['TCSPC_L_dline_ch1']
+                    self.TCSCP_draglines['TCSPC_U_dline_ch1']=self.TCSCP_draglines_init['TCSPC_U_dline_ch1']
+                    self.TCSCP_draglines['TCSPC_L_dline_ch2']=self.TCSCP_draglines_init['TCSPC_L_dline_ch2']
+                    self.TCSCP_draglines['TCSPC_U_dline_ch2']=self.TCSCP_draglines_init['TCSPC_U_dline_ch2']
+    
+                self.TCSPC_subplots['columns'] = 2
+                self.TCSPC_subplots['column_ratios'] = [0.5,0.5]
+                dpg.configure_item('TCSPC_subplots',columns = self.TCSPC_subplots['columns'],column_ratios = self.TCSPC_subplots['column_ratios'])
+                dpg.show_item('TCSPC_plt_ch_1')
+                dpg.show_item('TCSPC_plt_ch_2')
+    
+                dpg.set_value('TCSPC_L_dline_ch1',self.TCSCP_draglines['TCSPC_L_dline_ch1'])
+                dpg.set_value('TCSPC_U_dline_ch1',self.TCSCP_draglines['TCSPC_U_dline_ch1'])
+                dpg.set_value('TCSPC_L_dline_ch2',self.TCSCP_draglines['TCSPC_L_dline_ch2'])
+                dpg.set_value('TCSPC_U_dline_ch2',self.TCSCP_draglines['TCSPC_U_dline_ch2'])
+
+                dpg.set_value('TCSPC_timegate_check',True)
+                dpg.set_value('TCSPC_BG_correction_check',False)
+                # self.callback_calc_fltr_one(sender = 'Calculate_filter_once_button')
+                dpg.configure_item('Calculate_filter_once_button',enabled=True)
+                dpg.configure_item('Calculate_filter_all_button',enabled=True)
+                dpg.show_item('Calculate_filter_once_button')
+                dpg.show_item('Calculate_filter_all_button')
+
             else:
-                self.TCSCP_draglines['TCSPC_L_dline_ch1']=self.TCSCP_draglines_init['TCSPC_L_dline_ch1']
-                self.TCSCP_draglines['TCSPC_U_dline_ch1']=self.TCSCP_draglines_init['TCSPC_U_dline_ch1']
-                self.TCSCP_draglines['TCSPC_L_dline_ch2']=self.TCSCP_draglines_init['TCSPC_L_dline_ch2']
-                self.TCSCP_draglines['TCSPC_U_dline_ch2']=self.TCSCP_draglines_init['TCSPC_U_dline_ch2']
+                dpg.hide_item('Anal_window_TCSPC_tab')
+                dpg.hide_item('TCSPC_plt_ch_1')
+                dpg.hide_item('TCSPC_plt_ch_2')
+
+                dpg.set_value('TCSPC_timegate_check',False)
+                dpg.set_value('TCSPC_BG_correction_check',False)
+                self.callback_calc_fltr_one('Calculate_filter_once_button',None)
+                dpg.configure_item('Calculate_filter_once_button',enabled=False)
+                dpg.configure_item('Calculate_filter_all_button',enabled=False)
+                dpg.hide_item('Calculate_filter_once_button')
+                dpg.hide_item('Calculate_filter_all_button')
+                dpg.configure_item('Calculate_correlation_once_button',enabled=True)
+                dpg.configure_item('Calculate_correlation_all_button',enabled=True)
+            
             self.TT_xdata_1=(self.fcs_data.timetrace[list(self.channels)[0]].time_interval*1e-9).values.astype(float)
             self.TT_ydata_1=(self.fcs_data.timetrace[list(self.channels)[0]].occurrences).values.astype(float)
             self.TT_xdata_2=(self.fcs_data.timetrace[list(self.channels)[1]].time_interval*1e-9).values.astype(float)
@@ -978,19 +1093,14 @@ class _PTU_Corr_common:
                                np.zeros(len(self.TT_xdata_2)),
                                np.zeros(len(self.TT_xdata_2))
                                ]
-            self.TCSPC_subplots['columns'] = 2
-            self.TCSPC_subplots['column_ratios'] = [0.5,0.5]
-            dpg.configure_item('TCSPC_subplots',columns = self.TCSPC_subplots['columns'],column_ratios = self.TCSPC_subplots['column_ratios'])
-            dpg.show_item('TCSPC_plt_ch_2')
+            
+            
             self.FCS_subplots['columns'] = 2
             self.FCS_subplots['column_ratios'] = [0.5,0.5]
             dpg.configure_item('FCS_subplots',columns = self.FCS_subplots['columns'],column_ratios = self.FCS_subplots['column_ratios'])
             dpg.show_item('FCS_plt_ch_2')
             dpg.show_item('FCS_cross_check')
-            dpg.set_value('TCSPC_L_dline_ch1',self.TCSCP_draglines['TCSPC_L_dline_ch1'])
-            dpg.set_value('TCSPC_U_dline_ch1',self.TCSCP_draglines['TCSPC_U_dline_ch1'])
-            dpg.set_value('TCSPC_L_dline_ch2',self.TCSCP_draglines['TCSPC_L_dline_ch2'])
-            dpg.set_value('TCSPC_U_dline_ch2',self.TCSCP_draglines['TCSPC_U_dline_ch2'])
+            
 
         dpg.set_value('auto_FCS_plot1',([],[]))
         dpg.set_value('auto_FCS_plot2',([],[]))
@@ -2604,6 +2714,7 @@ class _PTU_Corr_common:
         nsub = int(np.floor(npoints / decades))
         nsub = max(1, nsub)
         chunks = list(self.META_data['TT info']['chunks'].keys())
+        print(chunks)
         # t_setup = time.perf_counter() - t0
 
         # t0 = time.perf_counter()
@@ -2734,8 +2845,9 @@ class _PTU_Corr_common:
             
     
     def mnt_bttns_TCSPC(self):
-        dpg.configure_item('Calculate_filter_once_button',enabled=True)
-        dpg.configure_item('Calculate_filter_all_button',enabled=True)
+        if self.fcs_data.PHOTONS['Mode'] != 'CW':
+            dpg.configure_item('Calculate_filter_once_button',enabled=True)
+            dpg.configure_item('Calculate_filter_all_button',enabled=True)
     
     
     def umnt_bttns_TCSPC(self):
@@ -2752,12 +2864,13 @@ class _PTU_Corr_common:
         dpg.configure_item('Export_all_correlation_curves_binary_button',enabled=True)
     
     def umnt_bttns_FCS(self):
-        dpg.configure_item('Calculate_correlation_once_button',enabled=False)
-        dpg.configure_item('Calculate_correlation_all_button',enabled=False)
-        dpg.configure_item('Export_correlation_curve_button',enabled=False)
-        dpg.configure_item('Export_all_correlation_curves_button',enabled=False)
-        dpg.configure_item('Export_correlation_curve_binary_button',enabled=False)
-        dpg.configure_item('Export_all_correlation_curves_binary_button',enabled=False)
+        if self.fcs_data.PHOTONS['Mode'] != 'CW':
+            dpg.configure_item('Calculate_correlation_once_button',enabled=False)
+            dpg.configure_item('Calculate_correlation_all_button',enabled=False)
+            dpg.configure_item('Export_correlation_curve_button',enabled=False)
+            dpg.configure_item('Export_all_correlation_curves_button',enabled=False)
+            dpg.configure_item('Export_correlation_curve_binary_button',enabled=False)
+            dpg.configure_item('Export_all_correlation_curves_binary_button',enabled=False)
 
     
     def tab_callback(self,sender, app_data, user_data):
@@ -2929,6 +3042,13 @@ class _PTU_Corr_common:
         nsubs = dpg.get_value('left_panel_drag_subs')
         nchunks = dpg.get_value('left_panel_N_chunks')
         custom_chunk = dpg.get_value('Custom_chunks_check')
+
+        if self.fcs_data.PHOTONS['Mode'] == 'CW':
+            self._recompute_photon_for_all_chunks()
+        else:
+            self._build_tcspc_time_cache()
+            self._recompute_tcspc_for_all_chunks()
+        
         chunks = self.chunks
         self.fcs_data.count_rate = self.fcs_data.calculate_count_rate(self.fcs_data.PHOTONS,self.fcs_data.timetrace,self.fcs_data.time_bin)
         output ={'Time_bin':tbin,
@@ -2982,7 +3102,8 @@ class _PTU_Corr_common:
     
     def _PCKL_DATA(self):
         self.META_data['TT info']=self.TT_snapshot()
-        self.META_data['TCSPC info']=self.TCSPC_snapshot()
+        if self.fcs_data.PHOTONS['Mode'] != 'CW':
+            self.META_data['TCSPC info']=self.TCSPC_snapshot()
         self.META_data['FCS info']=self.FCS_snapshot()
         file=self.anal_file.replace('.ptu','.pd1')
         path = self.last_directory
@@ -2992,6 +3113,8 @@ class _PTU_Corr_common:
         chnk_file=self.anal_file.replace('.ptu','.chnk')
         path = self.last_directory
         chnk_path = os.path.join(path,chnk_file)
+        
+        
     def _apply_chunks_to_gui_fast(self):
         nsel = len(self.channels)
         # iteruj deterministycznie po chunk_0..chunk_{n-1}
@@ -3043,29 +3166,29 @@ class _PTU_Corr_common:
             self.calculate_shade()
             self.plot_TT()
     
-    
-        tc = pkl.get('TCSPC info', {})
-        tgate = tc.get('tgate')
-        tcspcBG_chk = tc.get('tcspcBG_chk')
-        dlines = tc.get('dlines', {})
-        BG_lvl = tc.get('BG_lvl', [0, 0])
-    
-        if tgate is not None:
-            dpg.set_value('TCSPC_timegate_check', bool(tgate))
-            self.callback_tcspc_timegate('TCSPC_timegate_check', bool(tgate))
-    
-        if tcspcBG_chk is not None:
-            dpg.set_value('TCSPC_BG_correction_check', bool(tcspcBG_chk))
-            self.callback_tcspc_BG('TCSPC_BG_correction_check', bool(tcspcBG_chk))
-    
-        if 'TCSPC_L_dline_ch1' in dlines: dpg.set_value('TCSPC_L_dline_ch1', dlines['TCSPC_L_dline_ch1'])
-        if 'TCSPC_U_dline_ch1' in dlines: dpg.set_value('TCSPC_U_dline_ch1', dlines['TCSPC_U_dline_ch1'])
-        if 'TCSPC_L_dline_ch2' in dlines: dpg.set_value('TCSPC_L_dline_ch2', dlines['TCSPC_L_dline_ch2'])
-        if 'TCSPC_U_dline_ch2' in dlines: dpg.set_value('TCSPC_U_dline_ch2', dlines['TCSPC_U_dline_ch2'])
-    
-        if isinstance(BG_lvl, (list, tuple)) and len(BG_lvl) >= 2:
-            dpg.set_value('TCSPC_BG_dline_ch1', BG_lvl[0])
-            dpg.set_value('TCSPC_BG_dline_ch2', BG_lvl[1])
+        if self.fcs_data.PHOTONS['Mode'] != 'CW':
+            tc = pkl.get('TCSPC info', {})
+            tgate = tc.get('tgate')
+            tcspcBG_chk = tc.get('tcspcBG_chk')
+            dlines = tc.get('dlines', {})
+            BG_lvl = tc.get('BG_lvl', [0, 0])
+        
+            if tgate is not None:
+                dpg.set_value('TCSPC_timegate_check', bool(tgate))
+                self.callback_tcspc_timegate('TCSPC_timegate_check', bool(tgate))
+        
+            if tcspcBG_chk is not None:
+                dpg.set_value('TCSPC_BG_correction_check', bool(tcspcBG_chk))
+                self.callback_tcspc_BG('TCSPC_BG_correction_check', bool(tcspcBG_chk))
+        
+            if 'TCSPC_L_dline_ch1' in dlines: dpg.set_value('TCSPC_L_dline_ch1', dlines['TCSPC_L_dline_ch1'])
+            if 'TCSPC_U_dline_ch1' in dlines: dpg.set_value('TCSPC_U_dline_ch1', dlines['TCSPC_U_dline_ch1'])
+            if 'TCSPC_L_dline_ch2' in dlines: dpg.set_value('TCSPC_L_dline_ch2', dlines['TCSPC_L_dline_ch2'])
+            if 'TCSPC_U_dline_ch2' in dlines: dpg.set_value('TCSPC_U_dline_ch2', dlines['TCSPC_U_dline_ch2'])
+        
+            if isinstance(BG_lvl, (list, tuple)) and len(BG_lvl) >= 2:
+                dpg.set_value('TCSPC_BG_dline_ch1', BG_lvl[0])
+                dpg.set_value('TCSPC_BG_dline_ch2', BG_lvl[1])
     
     
         fcs = pkl.get('FCS info', {})

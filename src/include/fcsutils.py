@@ -155,6 +155,7 @@ class load_fcs:
     def __init__(self,file,time_bin):
         
         self.file = file
+        self.TTTR_Mode = None
         self.mode = ''
         self.time_bin = time_bin #[s]
         self.timetrace = {}
@@ -218,6 +219,7 @@ class load_fcs:
     def calculate_photons(self):
         PHOTS = {}
         ok, ptu_file = self.test_read(self.file)
+        self.TTTR_Mode = ptu_file.rec_type_r[ptu_file.head['TTResultFormat_TTTRRecType']]
         if ok:
             self.fcs_data = self.get_fcs_data(ptu_file)  
             PHOTS, TAU_RES = self.extract_photons(self.fcs_data)
@@ -235,11 +237,20 @@ class load_fcs:
     
     def get_fcs_data(self,ptu_file):
         '''This function is an analogy to function get_flim_data_stack from the readPTU_FLIM package.'''
-        header_variables  = [ptu_file.head["MeasDesc_Resolution"],
-                                      ptu_file.head["MeasDesc_GlobalResolution"],
-                                      ptu_file.head['Measurement_SubMode'],
-                                      ptu_file.head['TTResult_SyncRate'],
-                                      ptu_file.head['UsrPulseCfg']]
+
+        
+        if 'UsrPulseCfg' in list(ptu_file.head.keys()):
+            header_variables  = [ptu_file.head["MeasDesc_Resolution"],
+                                          ptu_file.head["MeasDesc_GlobalResolution"],
+                                          ptu_file.head['Measurement_SubMode'],
+                                          ptu_file.head['TTResult_SyncRate'],
+                                          ptu_file.head['UsrPulseCfg']]
+        else:
+            header_variables  = [ptu_file.head["MeasDesc_Resolution"],
+                                          ptu_file.head["MeasDesc_GlobalResolution"],
+                                          ptu_file.head['Measurement_SubMode'],
+                                          ptu_file.head['TTResult_SyncRate'],
+                                          'CW']
         
         sync        = ptu_file.sync 
         tcspc       = ptu_file.tcspc
@@ -256,8 +267,10 @@ class load_fcs:
         
         
     def extract_photons(self,FCSDATA):
+        # print(FCSDATA)
         subMode = int(FCSDATA[4][2])
         tau_resolution = FCSDATA[4][0]*1e9 # //ns
+        GlobalResolution = FCSDATA[4][1]
         sync_Rate = int(FCSDATA[4][3])
         mode = FCSDATA[4][4]
         channels = np.unique(FCSDATA[2])
@@ -280,22 +293,26 @@ class load_fcs:
                                                  }
                 Photons['tau_resolution'] = tau_resolution
                 Photons['sync_Rate'] = sync_Rate
+                Photons['GlobalResolution'] = GlobalResolution
                 Photons['Mode'] = mode
         return Photons,tau_resolution
     
-    def Photons_occurence(self,PHOTS):
+    def Photons_occurence(self, PHOTS):
         channels = [ch for ch in PHOTS.keys() if ch.startswith('channel_')]
         occur = {}
+    
+        global_resolution = PHOTS['GlobalResolution']
+    
         for ch in channels:
-            time = (PHOTS[ch]['sync']/PHOTS['sync_Rate'])*1e9
-            number = np.ones(time.size)
-            weights = np.ones(time.size)
-            mx = int(np.ceil(PHOTS[ch]['sync'].max() / (PHOTS['sync_Rate'] * 1e-9)))
-            occur[ch]= {'time':time,
-                                 'number':number,
-                                 'weights':weights,
-                                 'mx':mx
-                                }
+            time = PHOTS[ch]['sync'].astype(np.float64) * global_resolution * 1e9
+    
+            occur[ch] = {
+                'time': time,
+                'number': np.ones(time.size),
+                'weights': np.ones(time.size),
+                'mx': int(np.ceil(time.max()))
+            }
+    
         return occur
 
 
@@ -373,35 +390,37 @@ class load_fcs:
     
 
     def calculate_decays(self, PHOTS, time_indices=None):
+        
         channels = [ch for ch in PHOTS.keys() if ch.startswith('channel_')]
         decays = {}
-        tau_res = self.tau_resolution
-        def _select_idx(j, ch):
-            if time_indices is None:
+        if self.TTTR_Mode != 'CW':
+            tau_res = self.tau_resolution
+            def _select_idx(j, ch):
+                if time_indices is None:
+                    return None
+                if isinstance(time_indices, (list, tuple)) and len(time_indices) == 0:
+                    return None
+                if isinstance(time_indices, dict):
+                    return time_indices.get(ch, None)
+                if isinstance(time_indices, (list, tuple)):
+                    return time_indices[j] if j < len(time_indices) else None
                 return None
-            if isinstance(time_indices, (list, tuple)) and len(time_indices) == 0:
-                return None
-            if isinstance(time_indices, dict):
-                return time_indices.get(ch, None)
-            if isinstance(time_indices, (list, tuple)):
-                return time_indices[j] if j < len(time_indices) else None
-            return None
-
-        for j, ch in enumerate(channels):
-            tc_all = PHOTS[ch]['tcspc']
-            idx = _select_idx(j, ch)
-            tc = tc_all[idx] if idx is not None else tc_all
-            if tc.size == 0:
-                decays[ch] = pd.DataFrame({'decay_time': np.array([], dtype=float),
-                                           'counts': np.array([], dtype=int)})
-                continue
-
-            m = int(tc.max()) + 1
-            hist = np.bincount(tc, minlength=m)
-            nz = np.nonzero(hist)[0]
-            counts = hist[nz]
-            decay_time = nz * tau_res 
-            decays[ch] = pd.DataFrame({'decay_time': decay_time, 'counts': counts})
+    
+            for j, ch in enumerate(channels):
+                tc_all = PHOTS[ch]['tcspc']
+                idx = _select_idx(j, ch)
+                tc = tc_all[idx] if idx is not None else tc_all
+                if tc.size == 0:
+                    decays[ch] = pd.DataFrame({'decay_time': np.array([], dtype=float),
+                                               'counts': np.array([], dtype=int)})
+                    continue
+    
+                m = int(tc.max()) + 1
+                hist = np.bincount(tc, minlength=m)
+                nz = np.nonzero(hist)[0]
+                counts = hist[nz]
+                decay_time = nz * tau_res 
+                decays[ch] = pd.DataFrame({'decay_time': decay_time, 'counts': counts})
 
         return decays
 
@@ -478,20 +497,34 @@ class load_fcs:
         sig_f={'t':{},
                'w':{}}
         channels = [k for k in self.PHOTONS.keys() if k.startswith('channel_')]
+
+        is_cw = self.PHOTONS['Mode'] == 'CW'
+        
         for ch in channels:
             if ch=='channel_0':
                 chn = 'ch1'
             elif ch=='channel_1':
                 chn = 'ch2'
-            chkrng  = meta['TT info']['chunks'][chnk]['tcspc'][chn]
+            # chkrng  = meta['TT info']['chunks'][chnk]['tcspc'][chn]
+            if is_cw:
+                chkrng = meta['TT info']['chunks'][chnk]['photon'][chn]
+            else:
+                chkrng = meta['TT info']['chunks'][chnk]['tcspc'][chn]
             chunk_ind = np.arange(chkrng[0],chkrng[1])
-            tscpc = self.PHOTONS[ch]['tcspc'][chunk_ind]
-            sig_f['t'][ch] = ((self.PHOTONS[ch]['sync'][chunk_ind]/self.PHOTONS['sync_Rate'])*10**(9))
-            sig_f['w'][ch] = np.zeros(sig_f['t'][ch].size)
-            for i,tch in enumerate(meta['TCSPC info']['Filters'][ch]['tcscp']):
-                if tch in tscpc:
+            print('channel:',ch,'chunk_ind:',chunk_ind)
+            sig_f['t'][ch] = ((self.PHOTONS[ch]['sync'][chunk_ind]*self.PHOTONS['GlobalResolution'])*1e9)
+            # sig_f['t'][ch] = ((self.PHOTONS[ch]['sync'][chunk_ind]/self.PHOTONS['sync_Rate'])*10**(9))
+            sig_f['w'][ch] = np.ones(sig_f['t'][ch].size)
+            if not is_cw:
+                tscpc = self.PHOTONS[ch]['tcspc'][chunk_ind]
+        
+                filters = meta.get('TCSPC info', {}).get('Filters', {}).get(ch, {})
+                tcspc_filter = filters.get('tcscp', [])
+                filter_data = filters.get('Data', [])
+        
+                for i, tch in enumerate(tcspc_filter):
                     findex = np.where(tscpc == tch)[0]
-                    sig_f['w'][ch][findex]=meta['TCSPC info']['Filters'][ch]['Data'][i]
+                    sig_f['w'][ch][findex] = filter_data[i]
         return sig_f
 
     def prepare_for_corr(self, sig_f):
