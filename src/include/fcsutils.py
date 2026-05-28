@@ -506,10 +506,11 @@ class load_fcs:
             elif ch=='channel_1':
                 chn = 'ch2'
             # chkrng  = meta['TT info']['chunks'][chnk]['tcspc'][chn]
-            if is_cw:
-                chkrng = meta['TT info']['chunks'][chnk]['photon'][chn]
-            else:
-                chkrng = meta['TT info']['chunks'][chnk]['tcspc'][chn]
+            # if is_cw:
+            #     chkrng = meta['TT info']['chunks'][chnk]['photon'][chn]
+            # else:
+            chkrng = meta['TT info']['chunks'][chnk]['tcspc'][chn]
+            print(chnk,chkrng)
             chunk_ind = np.arange(chkrng[0],chkrng[1])
             print('channel:',ch,'chunk_ind:',chunk_ind)
             sig_f['t'][ch] = ((self.PHOTONS[ch]['sync'][chunk_ind]*self.PHOTONS['GlobalResolution'])*1e9)
