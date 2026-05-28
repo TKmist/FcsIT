@@ -1097,6 +1097,8 @@ class _PTU_Corr_common:
         
         if os.path.exists(pkl):
             self.read_PKL_DATA(pkl)
+            print('load_data',"self.META_data['FCS info']")
+            print(self.META_data['FCS info'])
             if self.META_data['TCSPC info']['BG_lvl'] == (-1,-1):
                 if len(self.channels) == 1:
                     BGLvL =(self.auto_bg_lvl('ch1'),None)
@@ -1164,12 +1166,13 @@ class _PTU_Corr_common:
             #     pass
             self.switch_to_tcspc_tab()
             self.switch_to_corr_tab()
-            print('load_data_1')
+            # print('load_data_1')
             self._set_items_enabled(self.TCSPC_BUTTONS, False)
             
             self.verify_item_configuration('T2')
-            print('load_data_2')
+            # print('load_data_2')
             self._set_items_enabled(self.FCS_BUTTONS, True)
+            self._PCKL_DATA()
 
             
             
@@ -3213,17 +3216,21 @@ class _PTU_Corr_common:
 
     
     def _PCKL_DATA(self):
+        print('_PCKL_DATA')
         self.META_data['TT info']=self.TT_snapshot()
         self.META_data['TCSPC info']=self.TCSPC_snapshot()
         self.META_data['FCS info']=self.FCS_snapshot()
         file=self.anal_file.replace('.ptu','.pd1')
         path = self.last_directory
         pkl_path = os.path.join(path,file)
+        print(self.META_data['FCS info'])
         with open(pkl_path, 'wb') as f:
             pickle.dump(self.META_data, f)
         chnk_file=self.anal_file.replace('.ptu','.chnk')
         path = self.last_directory
         chnk_path = os.path.join(path,chnk_file)
+
+        
     def _apply_chunks_to_gui_fast(self):
         nsel = len(self.channels)
         # iteruj deterministycznie po chunk_0..chunk_{n-1}
@@ -3241,6 +3248,7 @@ class _PTU_Corr_common:
 
                 
     def read_PKL_DATA(self,path):
+        print('read_PKL_DATA')
     
         with open(path, 'rb') as file:
             pkl = pickle.load(file)
@@ -3301,6 +3309,7 @@ class _PTU_Corr_common:
     
     
         fcs = pkl.get('FCS info', {})
+        print('fcs\n',fcs)
         try:
             self.autoNorm_ch_1 = fcs.get('AutoCorr_1', pd.DataFrame(columns=['time','MEAN','SE']))
         except Exception:
@@ -3320,7 +3329,9 @@ class _PTU_Corr_common:
             self.CrossNorm_ch_2 = fcs.get('CrossCorr_21', pd.DataFrame(columns=['time','MEAN','SE']))
         except Exception:
             self.CrossNorm_ch_2 = pd.DataFrame(columns=['time','MEAN','SE'])
-    
+        print("self.META_data['FCS info']")   
+        print(self.META_data['FCS info'])
+        
         try:
             self.META_data['FCS info'] = self.FCS_snapshot()
         except Exception:
