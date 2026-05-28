@@ -265,46 +265,6 @@ class _PTU_Corr_common:
 
         self._chunk_draglines = []          # tagi dragline’ów, które stworzyliśmy
         self._bulk_updating_chunks = False  # blokada ciężkich aktualizacji w callbackach (opcjonalnie)
-
-        self.TCSPC_BUTTONS = [
-            'Calculate_filter_once_button',
-            'Calculate_filter_all_button',
-        ]
-        
-        self.FCS_BUTTONS = [
-            'Calculate_correlation_once_button',
-            'Calculate_correlation_all_button',
-            'Export_correlation_curve_button',
-            'Export_all_correlation_curves_button',
-            'Export_correlation_curve_binary_button',
-            'Export_all_correlation_curves_binary_button',
-        ]
-
-        self.ui_T3_T2_config = {'T3':{
-                                      'Anal_window_TCSPC_tab':{'show':True,
-                                                               },
-                                      'Calculate_filter_once_button':{'enabled': True,
-                                                                      'show': True
-                                                                      },
-                                          'Calculate_filter_all_button':{'enabled': True,
-                                                                         'show': True
-                                                                         }
-                                    },
-                                'T2':{
-                                      'Anal_window_TCSPC_tab':{'show': False,
-                                                               },
-                                      'Calculate_filter_once_button':{'enabled': False,
-                                                                      'show': False
-                                                                      },
-                                      'Calculate_filter_all_button':{'enabled': False,
-                                                                     'show': False
-                                                                     },
-                                       'Calculate_correlation_once_button':{'enabled': True
-                                                                     },
-                                    'Calculate_correlation_all_button':{'enabled': True
-                                                                     }
-                                      }
-                               }
         
     #########################################################################           
     #########################################################################           
@@ -440,50 +400,6 @@ class _PTU_Corr_common:
                 ch["tcspc"]["ch1"][1] = e1
                 ch["tcspc"]["ch2"][0] = s2
                 ch["tcspc"]["ch2"][1] = e2
-
-
-    def _recompute_photon_for_all_chunks(self):
-    
-        channels = [
-            ch for ch in self.fcs_data.PHOTONS.keys()
-            if ch.startswith("channel_")
-        ]
-    
-        channels.sort()
-    
-        global_resolution = self.fcs_data.PHOTONS['GlobalResolution']
-    
-        for chunk_name, chunk in self.chunks.items():
-    
-            # chunk boundaries z dragline/time trace
-            t0 = chunk["values"][0]   # [s]
-            t1 = chunk["values"][1]   # [s]
-    
-            if "photon" not in chunk:
-                chunk["photon"] = {}
-    
-            for ch in channels:
-    
-                if ch == "channel_0":
-                    chn = "ch1"
-    
-                elif ch == "channel_1":
-                    chn = "ch2"
-    
-                else:
-                    continue
-    
-                # absolutny czas fotonów [s]
-                time_s = (
-                    self.fcs_data.PHOTONS[ch]['sync'].astype(np.float64)
-                    * global_resolution
-                )
-    
-                # mapowanie zakresu czasu -> zakres fotonów
-                i0 = np.searchsorted(time_s, t0, side="left")
-                i1 = np.searchsorted(time_s, t1, side="right")
-    
-                chunk["tcspc"][chn] = [int(i0), int(i1)]
     
     def add_chunks(self, reset: bool = True):
         """
@@ -631,18 +547,9 @@ class _PTU_Corr_common:
             self.globalITEMS.windows.extend(new_window_tags)
     
         # --- 9) show/hide (OK)
-        
         self.show_chunks_drag_lines("Custom_chunks_check", dpg.get_value("Custom_chunks_check"),allow_reset=False)
-        self._build_tcspc_time_cache() 
-        if self.fcs_data.PHOTONS['Mode'] != 'CW':
-            
-            self._recompute_tcspc_for_all_chunks()# aktualny dataset
-        else:
-            self._recompute_photon_for_all_chunks()
-                # wypełnij tcspc od razu
-
-
-
+        self._build_tcspc_time_cache()            # aktualny dataset
+        self._recompute_tcspc_for_all_chunks()    # wypełnij tcspc od razu
     
     # def add_chunks(self):
     #     nchunks = int(dpg.get_value('left_panel_N_chunks'))
@@ -1018,6 +925,7 @@ class _PTU_Corr_common:
                           'FCS info':{}
                          }
         time_bin = self.round_data(self.method_init.left_panel_drag_time_binning['default_time_bin'])
+        # print(time_bin)
         dpg.set_value('left_panel_drag_time_binning',time_bin)
         dpg.set_value('left_panel_drag_subs',self.method_init.left_panel_drag_subs['default_value'])
         dpg.set_value('left_panel_N_chunks',self.method_init.left_panel_N_chunks['default_value'])
@@ -1146,62 +1054,13 @@ class _PTU_Corr_common:
                 dpg.configure_item('TT_plot2',label = 'Channel 1; '+ 'CNTR ='+ self.stringer_cntr([cntrt_2[0],None]))
             else:
                 dpg.configure_item('TT_plot2',label = 'Channel 1; '+ 'CNTR ='+ self.stringer_cntr([cntrt_2[0],cntrt_2[1]])   )
-        
-        
-        if self.fcs_data.PHOTONS['Mode'] != 'CW':
-            self.plot_FCS()
-            self._PCKL_DATA()
-            self.switch_to_tcspc_tab()
-            self.verify_item_configuration('T3')
-        else:
-            self.callback_calc_fltr_one(None,None)
-            self.plot_FCS()
-            self.switch_to_tcspc_tab()
-            self.switch_to_corr_tab()
-            self._set_items_enabled(self.TCSPC_BUTTONS, False)
-            
-            self.verify_item_configuration('T2')
-            self._set_items_enabled(self.FCS_BUTTONS, True)
-            self._PCKL_DATA()
-
-            
-            
-        
+        self.plot_FCS()
+        self._PCKL_DATA()
             
         
     #########################################################################           
     #########################################################################           
-    #########################################################################  
-    def switch_to_corr_tab(self):
-        dpg.set_value(
-            "Anal_window_tab_bar",
-            "Anal_window_Correlation_tab"
-        )
-    def switch_to_tcspc_tab(self):
-        dpg.set_value(
-            "Anal_window_tab_bar",
-            "Anal_window_TCSPC_tab"
-        )
-
-    def verify_item_configuration(self, T_mode):
-        mode_config = self.ui_T3_T2_config.get(T_mode, {})
-    
-        for item, expected_conf in mode_config.items():
-            if not dpg.does_item_exist(item):
-                print(f"Item does not exist: {item}")
-                continue
-    
-            current_conf = dpg.get_item_configuration(item)
-    
-            for key, expected_value in expected_conf.items():
-                current_value = current_conf.get(key, None)
-    
-                if current_value != expected_value:
-                    dpg.configure_item(item, **{key: expected_value})
-                    
-        
-        
-        
+    #########################################################################   
 
 
     def show_error_no_files_close_only(self,error_text):
@@ -1652,20 +1511,11 @@ class _PTU_Corr_common:
             dpg.configure_item('file_box', items=self.files,default_value = self.anal_file)
             file = os.path.join(self.last_directory,self.anal_file)
             self.load_data(file)
-            if self.fcs_data.PHOTONS['Mode'] != 'CW':
-                self.mnt_bttns_TCSPC()
-                
-                try:
-                    self.umnt_bttns_FCS()
-                except:
-                    pass
-            else:
-                self.mnt_bttns_FCS()
-                
-                try:
-                    self.umnt_bttns_TCSPC()
-                except:
-                    pass
+            self.mnt_bttns_TCSPC()
+            try:
+                self.umnt_bttns_FCS()
+            except:
+                pass
             dpg.configure_item('file_dialog_id_PTU',default_path=self.last_directory)
             dpg.configure_item('file_dialog_save_correlated',default_path=self.last_directory)
             dpg.configure_item('Anal_window_Correlation_tab', user_data=False)
@@ -1735,32 +1585,18 @@ class _PTU_Corr_common:
         self.anal_file = app_data
         file = os.path.join(self.last_directory,self.anal_file)
         self.load_data(file)
-        if self.fcs_data.PHOTONS['Mode'] != 'CW':
-            try:
-                self.umnt_bttns_TCSPC()
-            except:
-                pass
-            try:
-                self.umnt_bttns_FCS()
-            except:
-                pass
-            try:
-                self.mnt_bttns_TCSPC()
-            except:
-                pass
-        else:
-            try:
-                self.umnt_bttns_TCSPC()
-            except:
-                pass
-            try:
-                self.umnt_bttns_FCS()
-            except:
-                pass
-            try:
-                self.mnt_bttns_FCS()
-            except:
-                pass
+        try:
+            self.umnt_bttns_TCSPC()
+        except:
+            pass
+        try:
+            self.umnt_bttns_FCS()
+        except:
+            pass
+        try:
+            self.mnt_bttns_TCSPC()
+        except:
+            pass
         
     
     #########################################################################           
@@ -2571,13 +2407,8 @@ class _PTU_Corr_common:
     
     
     def Calculate_TCSPC_filters(self,butt):
-        is_CW = self.fcs_data.PHOTONS['Mode'] == 'CW'
-        if is_CW:
-            is_gated = False
-            is_bg = False
-        else:
-            is_gated = dpg.get_value('TCSPC_timegate_check')
-            is_bg = dpg.get_value('TCSPC_BG_correction_check')
+        is_gated = dpg.get_value('TCSPC_timegate_check')
+        is_bg = dpg.get_value('TCSPC_BG_correction_check')
         if not is_gated and not is_bg:
             if len(self.channels) == 1:
                 chan = list(self.channels)[0]
@@ -2753,14 +2584,11 @@ class _PTU_Corr_common:
                 self._set_butt_label(butt)
                 self.Filters['channel_1']=self.fcs_data.calculate_stat_filter(self.CURVES['channel_1'],rawy,rawx)
     
-    def TCSPC_filtering(self,butt,sender=None):
-        if sender is not None:
-            self.autoNorm_ch_1 = pd.DataFrame(columns=['time','MEAN','SE'])
-            self.autoNorm_ch_2 = pd.DataFrame(columns=['time','MEAN','SE'])
-            self.CrossNorm_ch_1 = pd.DataFrame(columns=['time','MEAN','SE'])
-            self.CrossNorm_ch_2  = pd.DataFrame(columns=['time','MEAN','SE'])
-        else:
-            pass
+    def TCSPC_filtering(self,butt):
+        self.autoNorm_ch_1 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.autoNorm_ch_2 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.CrossNorm_ch_1 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.CrossNorm_ch_2  = pd.DataFrame(columns=['time','MEAN','SE'])
         self.Calculate_TCSPC_filters(butt)
         self.META_data['TCSPC info']=self.TCSPC_snapshot()
         
@@ -2782,6 +2610,8 @@ class _PTU_Corr_common:
         self.autoNorm_ch_1,self.autoNorm_ch_2,self.CrossNorm_ch_1,self.CrossNorm_ch_2,self.DictOfChunks =self.fcs_data._CORRELATE(chunks,nsub,npoints,tau_min,tau_max,self.META_data,sender)
         # t_core = time.perf_counter() - t0
 
+        # print(f"Correlating setup: {t_setup:.4f}s")
+        # print(f"_CORRELATE core:   {t_core:.4f}s")
             
     def callback_crossCorr_check(self,sender,app_data):
         is_Two_channel = len(self.channels) == 2
@@ -2903,54 +2733,43 @@ class _PTU_Corr_common:
             self.callback_crossCorr_check('FCS_cross_check',dpg.get_value('FCS_cross_check'))
             
     
-
     def mnt_bttns_TCSPC(self):
-        self._set_items_enabled(self.TCSPC_BUTTONS, True)
+        dpg.configure_item('Calculate_filter_once_button',enabled=True)
+        dpg.configure_item('Calculate_filter_all_button',enabled=True)
+    
     
     def umnt_bttns_TCSPC(self):
-        self._set_items_enabled(self.TCSPC_BUTTONS, False)
-    
+        dpg.configure_item('Calculate_filter_once_button',enabled=False)
+        dpg.configure_item('Calculate_filter_all_button',enabled=False)
+
+
     def mnt_bttns_FCS(self):
-        self._set_items_enabled(self.FCS_BUTTONS, True)
+        dpg.configure_item('Calculate_correlation_once_button',enabled=True)
+        dpg.configure_item('Calculate_correlation_all_button',enabled=True)
+        dpg.configure_item('Export_correlation_curve_button',enabled=True)
+        dpg.configure_item('Export_all_correlation_curves_button',enabled=True)
+        dpg.configure_item('Export_correlation_curve_binary_button',enabled=True)
+        dpg.configure_item('Export_all_correlation_curves_binary_button',enabled=True)
     
     def umnt_bttns_FCS(self):
-        self._set_items_enabled(self.FCS_BUTTONS, False)
-    
+        dpg.configure_item('Calculate_correlation_once_button',enabled=False)
+        dpg.configure_item('Calculate_correlation_all_button',enabled=False)
+        dpg.configure_item('Export_correlation_curve_button',enabled=False)
+        dpg.configure_item('Export_all_correlation_curves_button',enabled=False)
+        dpg.configure_item('Export_correlation_curve_binary_button',enabled=False)
+        dpg.configure_item('Export_all_correlation_curves_binary_button',enabled=False)
 
-    def tab_callback(self, sender, app_data, user_data):
-        
+    
+    def tab_callback(self,sender, app_data, user_data):
         tab = dpg.get_item_alias(app_data)
-    
-        if getattr(self, "_active_tab", None) == tab:
-            return
-    
-        self._active_tab = tab
-    
-    
-        if tab == 'Anal_window_TCSPC_tab':
-            self._set_items_enabled(self.FCS_BUTTONS, False)
-            self._set_items_enabled(self.TCSPC_BUTTONS, True)
-    
+        if tab =='Anal_window_TCSPC_tab':
+            self.umnt_bttns_FCS()
+            self.mnt_bttns_TCSPC()
         elif tab == 'Anal_window_Correlation_tab':
-            self._set_items_enabled(self.TCSPC_BUTTONS, False)
-            self._set_items_enabled(self.FCS_BUTTONS, True)
-    
+            self.umnt_bttns_TCSPC()
+            self.mnt_bttns_FCS()
             
-    def _set_items_enabled(self, items, enabled):
-        
-        for item in items:
-            if not dpg.does_item_exist(item):
-                print(f"missing item: {item}")
-                continue
-    
-            if enabled:
-                dpg.enable_item(item)
-            else:
-                dpg.disable_item(item)
 
-
-
-    
     def callback_calc_fltr_all(self,sender,app_data):
         filterscheck={'TG':dpg.get_value('TCSPC_timegate_check'),
                      'BG':dpg.get_value('TCSPC_BG_correction_check'),
@@ -2973,7 +2792,7 @@ class _PTU_Corr_common:
             dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
             # self.add_chunks(reset=True)   # albo reset=False
             # self._after_chunks_changed()
-            self.TCSPC_filtering('Calculate_filter_all_button',sender=sender)
+            self.TCSPC_filtering('Calculate_filter_all_button')
             self._PCKL_DATA()
         dpg.bind_item_theme('Calculate_filter_all_button', "fit_button_theme")
         dpg.set_item_label('Calculate_filter_all_button',old_button_label)
@@ -2986,7 +2805,7 @@ class _PTU_Corr_common:
     def callback_calc_fltr_one(self,sender,app_data):
         old_button_label = dpg.get_item_label('Calculate_filter_once_button')
         dpg.bind_item_theme('Calculate_filter_once_button', "fit_button_theme_busy")
-        self.TCSPC_filtering('Calculate_filter_once_button',sender=sender)
+        self.TCSPC_filtering('Calculate_filter_once_button')
         self._PCKL_DATA()
         dpg.bind_item_theme('Calculate_filter_once_button', "fit_button_theme")
         dpg.set_item_label('Calculate_filter_once_button',old_button_label)
@@ -3173,8 +2992,6 @@ class _PTU_Corr_common:
         chnk_file=self.anal_file.replace('.ptu','.chnk')
         path = self.last_directory
         chnk_path = os.path.join(path,chnk_file)
-
-        
     def _apply_chunks_to_gui_fast(self):
         nsel = len(self.channels)
         # iteruj deterministycznie po chunk_0..chunk_{n-1}
@@ -3271,7 +3088,7 @@ class _PTU_Corr_common:
             self.CrossNorm_ch_2 = fcs.get('CrossCorr_21', pd.DataFrame(columns=['time','MEAN','SE']))
         except Exception:
             self.CrossNorm_ch_2 = pd.DataFrame(columns=['time','MEAN','SE'])
-        
+    
         try:
             self.META_data['FCS info'] = self.FCS_snapshot()
         except Exception:
@@ -3675,6 +3492,7 @@ class _PTU_Corr_common:
                         df = self.fcs_data.timetrace[ch][ind[0]:ind[1]]
                         cntr = self.fcs_data.calculate_chunk_count_rate(df)
                         CHNK.append(cntr[0])
+                        print(df.head())
                     cntr = (np.mean(CHNK),np.std(CHNK,ddof=1))
                 chhunk_rates[ch]=cntr
         else:
