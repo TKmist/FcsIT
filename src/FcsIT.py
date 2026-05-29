@@ -15,11 +15,11 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 '''
 
-with open('LICENSE', 'r') as file:
+with open('LICENSE', 'r',encoding='utf-8') as file:
     License = file.read()
-with open('GPLv3_short', 'r') as file:
+with open('GPLv3_short', 'r',encoding='utf-8') as file:
     License_short = file.read()
-with open('VERSION', 'r') as file:
+with open('VERSION', 'r',encoding='utf-8') as file:
     VERSION = file.read()
 line='=============================================================================='
 
