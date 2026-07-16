@@ -26,7 +26,7 @@ class _PTU_Corr_mounting_functions:
         inV.mounted_method = None        
         
     def mount_me(self):
-        dpg.add_menu_item(label="Open PTU files directory",
+        dpg.add_menu_item(label="Open PTU/PT3 files directory",
                   tag='open_menu_item',
                   parent = 'menu_file_dropout',
                   before = 'menu_item_exit',
@@ -103,7 +103,7 @@ class _PTU_Corr_menu_functions:
         
 PTU_Corr_manu_F = _PTU_Corr_menu_functions()
 
-dpg.add_menu_item(label="Import PTU",
+dpg.add_menu_item(label="Import PTU/PT3",
                           parent ='menu_analysis_method_dropout' ,
                           tag='Analysis_submenu_item_PTU_Corr',
                           callback=PTU_Corr_manu_F.callback_PTU_Corr_menu)

@@ -12,6 +12,7 @@ with open(version_path, 'r') as file:
 win_packages = ['pywin32']
 basic_packages = [
 "dearpygui<2.0.0",
+    "phconvert",
     "numpy==1.26.4",
     "pandas==2.2.3",
     "matplotlib==3.9.2",

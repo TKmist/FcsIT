@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from numpy import log10,sqrt
 import multipletau as mtau
-from Methods.PTU_Corr.include.Third_party.readPTU_FLIM import PTUreader, PTUHeaderReader
+# from Methods.PTU_Corr.include.Third_party.readPTU_FLIM import PTUreader, PTUHeaderReader
 from include.fcsutils import load_fcs
 import pickle
 import time
@@ -36,6 +36,7 @@ import socket
 import argparse
 from functools import wraps
 from datetime import datetime
+from pathlib import Path
 import inspect
 
 class _PTU_Corr_init:
@@ -358,7 +359,8 @@ class _PTU_Corr_common:
     def callback_Forget_PTU_data(self):
         if self.anal_file !='':
             if os.path.exists(os.path.join(self.last_directory,self.anal_file)):
-                file =self.anal_file.replace('.ptu','.pd1')
+                # file =self.anal_file.replace('.ptu','.pd1')
+                file = str(Path(self.anal_file).with_suffix('.pd1'))
                 if os.path.exists(os.path.join(self.last_directory,file)):
                     os.remove(os.path.join(self.last_directory,file))
                     self.load_data(os.path.join(self.last_directory,self.anal_file))
@@ -372,7 +374,8 @@ class _PTU_Corr_common:
         if self.anal_file !='':
             for file in self.files:
                 path = os.path.join(self.last_directory,file)
-                path =path.replace('.ptu','.pd1')
+                # path =path.replace('.ptu','.pd1')
+                path = str(Path(path).with_suffix('.pd1'))
                 if os.path.exists(path):
                     os.remove(path)
                 else:
@@ -1092,7 +1095,8 @@ class _PTU_Corr_common:
         dpg.set_axis_limits('FCS_yaxis_chan1',0,1)  
         dpg.set_axis_limits('FCS_xaxis_chan2',0.001,1000)
         dpg.set_axis_limits('FCS_yaxis_chan2',0,1)  
-        pkl = file.replace('.ptu','.pd1')
+        # pkl = file.replace('.ptu','.pd1')
+        pkl = str(Path(file).with_suffix('.pd1'))
         
         if os.path.exists(pkl):
             self.read_PKL_DATA(pkl)
@@ -1644,7 +1648,11 @@ class _PTU_Corr_common:
     def callback_directory_select(self, sender, app_data):
         self.last_directory = app_data['current_path']
         fls = os.listdir(self.last_directory)
-        fls = [f for f in fls if (f.endswith('.ptu'))]
+        fls = [
+              f for f in fls
+              if os.path.splitext(f)[1].lower() in ('.ptu', '.pt3')
+          ]
+
         fls = [f for f in fls if self.test_read(os.path.join(self.last_directory,f))]
         self.files=fls
         if len(self.files)>0:
@@ -1673,7 +1681,7 @@ class _PTU_Corr_common:
             self.basf.log_last_directory(self.last_directory)
             self.update_default_directory(self.last_directory)
         else:
-            self.show_error('Empty folder, or no .ptu files found.')
+            self.show_error('Empty folder, or no .ptu/.pt3 files found.')
     
     #########################################################################           
     #########################################################################           
@@ -1687,9 +1695,12 @@ class _PTU_Corr_common:
     #     cond = (submode == 1) or (submode == 0)
     #     return cond
 
+    # def test_read(self, file):
+    #     submode = PTUHeaderReader.read_tag_fast(file, "Measurement_SubMode")
+    #     return submode in (0, 1)
+        
     def test_read(self, file):
-        submode = PTUHeaderReader.read_tag_fast(file, "Measurement_SubMode")
-        return submode in (0, 1)
+        return os.path.splitext(file)[1].lower() in ('.ptu', '.pt3')
     
     def show_error(self,error_text):
         try:
@@ -3165,12 +3176,14 @@ class _PTU_Corr_common:
         self.META_data['TT info']=self.TT_snapshot()
         self.META_data['TCSPC info']=self.TCSPC_snapshot()
         self.META_data['FCS info']=self.FCS_snapshot()
-        file=self.anal_file.replace('.ptu','.pd1')
+        # file=self.anal_file.replace('.ptu','.pd1')
+        file = str(Path(self.anal_file).with_suffix('.pd1'))
         path = self.last_directory
         pkl_path = os.path.join(path,file)
         with open(pkl_path, 'wb') as f:
             pickle.dump(self.META_data, f)
-        chnk_file=self.anal_file.replace('.ptu','.chnk')
+        # chnk_file=self.anal_file.replace('.ptu','.chnk')
+        chnk_file = str(Path(self.anal_file).with_suffix('.chnk'))
         path = self.last_directory
         chnk_path = os.path.join(path,chnk_file)
 
@@ -3290,7 +3303,8 @@ class _PTU_Corr_common:
         incorrect_files=[]
         for file in self.files:
             path = os.path.join(self.last_directory,file)
-            path = path.replace('.ptu','.pd1')
+            # path = path.replace('.ptu','.pd1')
+            path = str(Path(path).with_suffix('.pd1'))
             if os.path.exists(path):
                 with open(path, 'rb') as f:
                     pkl = pickle.load(f)
@@ -3308,7 +3322,8 @@ class _PTU_Corr_common:
         incorrect_files=[]
         for file in self.files:
             path = os.path.join(self.last_directory,file)
-            path = path.replace('.ptu','.pd1')
+            # path = path.replace('.ptu','.pd1')
+            path = str(Path(path).with_suffix('.pd1'))
             with open(path, 'rb') as f:
                 pkl = pickle.load(f)
             if len(pkl['FCS info']['AutoCorr_1'])>0 or len(pkl['FCS info']['AutoCorr_2'])>0:
@@ -3379,7 +3394,8 @@ class _PTU_Corr_common:
         if self.corr_export_ext == '.dat':
             if self.corr_export_all=='single':
                 is_cross = dpg.get_value('FCS_cross_check')
-                file = self.anal_file.replace('.ptu','.dat')
+                # file = self.anal_file.replace('.ptu','.dat')
+                file = str(Path(self.anal_file).with_suffix('.dat'))
                 if len(self.channels) == 1:
                     chan = list(self.channels)[0]
                     if chan.endswith('_0'):
@@ -3428,8 +3444,10 @@ class _PTU_Corr_common:
             elif self.corr_export_all=='all':
                 for file in self.files:
                     pkl_path = os.path.join(self.last_directory,file)
-                    pkl_path = pkl_path.replace('.ptu','.pd1')
-                    expfile = file.replace('.ptu','.dat')
+                    # pkl_path = pkl_path.replace('.ptu','.pd1')
+                    pkl_path = str(Path(pkl_path).with_suffix('.pd1'))
+                    # expfile = file.replace('.ptu','.dat')
+                    expfile = str(Path(file).with_suffix('.dat'))
                     with open(pkl_path, 'rb') as f:
                         pkl = pickle.load(f)
                     auto_ch_1 = pkl['FCS info']['AutoCorr_1']
@@ -3485,7 +3503,8 @@ class _PTU_Corr_common:
         elif self.corr_export_ext == '.corr':
             if self.corr_export_all=='single':
                 is_cross = dpg.get_value('FCS_cross_check')
-                file = self.anal_file.replace('.ptu','.corr')
+                # file = self.anal_file.replace('.ptu','.corr')
+                file = str(Path(self.anal_file).with_suffix('.corr'))
                 if len(self.channels) == 1:
                     chan = list(self.channels)[0]
                     if chan.endswith('_0'):
@@ -3560,8 +3579,10 @@ class _PTU_Corr_common:
             elif self.corr_export_all=='all':
                 for file in self.files:
                     pkl_path = os.path.join(self.last_directory,file)
-                    pkl_path = pkl_path.replace('.ptu','.pd1')
-                    expfile = file.replace('.ptu','.corr')
+                    # pkl_path = pkl_path.replace('.ptu','.pd1')
+                    pkl_path = str(Path(pkl_path).with_suffix('.pd1'))
+                    # expfile = file.replace('.ptu','.corr')
+                    expfile = str(Path(file).with_suffix('.corr'))
                     with open(pkl_path, 'rb') as f:
                         pkl = pickle.load(f)
                     auto_ch_1 = pkl['FCS info']['AutoCorr_1']
