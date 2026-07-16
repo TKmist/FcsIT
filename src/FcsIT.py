@@ -96,15 +96,11 @@ settwin = inits.sett_window(viewport,inV.init_left_indent,
                              inV.init_bottom_indent,
                              inV.init_top_indent,
                              inV.init_group_spacer)
-# try:
 THEME = settwin.OPTIONS['theme_choose']
 build_themes(THEME)
 updt.run_updater()
 print('updt.updater_state =', updt.updater_state)
     
-# except:
-#     basf.some_fail()
-
 inV.METHODS = basf.search_for_methods()
 
 for method in inV.METHODS:

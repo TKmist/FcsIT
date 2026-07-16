@@ -1488,8 +1488,6 @@ class _TB_corr_common:
             pass
         else:
             os.mkdir(cross_2_path)
-        # dpg.set_value('display_savepath_text',corrpath)
-        # dpg.set_value('display_savepath_text_tooltip_text',dpg.get_value('display_savepath_text'))
         self.output_path = corrpath
         fb_items = dpg.get_item_configuration('file_box')['items']
         if len(fb_items) != 0:

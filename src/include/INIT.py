@@ -15,7 +15,6 @@ for more details.
 You should have received a copy of the GNU General Public License
 along with this file. If not, see <https://www.gnu.org/licenses/>.
 """
-# from __future__ import annotations
 import os
 import numpy as np
 from numpy import log10
@@ -207,7 +206,6 @@ class FcsITUpdater:
         dpg.delete_item("proceed_to_update_window")
 
     def proceed_window_OK(self):
-        # print("proceed_window_OK")
         window_size = dpg.get_item_rect_size("proceed_to_update_window")
 
         dpg.delete_item("proceed_to_update_window_ok_butt")
@@ -236,7 +234,6 @@ class FcsITUpdater:
                 1 * dpg.get_item_height("proceed_to_update_window")
                 + dpg.get_global_font_scale() * 50,
             ),
-            # callback=self.proceed_window_close
             parent="proceed_to_update_window",
             width=window_size[0],
         )
@@ -284,16 +281,11 @@ class FcsITUpdater:
             
             source = os.path.join(current_dir, f)
             target = os.path.join(bckp_dir, f)
-            # print(source)
-            # print(target)
             shutil.copy2(source, target)
 
-        # for d in FoldersToBackup:
         dpg.set_item_label("progress_button", "Backing up software directories")
         source = os.path.join(current_dir, "..")
         target = os.path.join(bckp_dir)
-        # print(source)
-        # print(target)
         shutil.copytree(
             source,
             target,
@@ -333,18 +325,12 @@ class FcsITUpdater:
             dpg.set_item_label("progress_button", "Updating meta files")
             source = os.path.join(updt_dir, f)
             target = os.path.join(current_dir, f)
-            # print(source)
-            # print(target)
             shutil.copy(source, target)
 
-        # FoldersToBackup = ["REWRITE_ROI", "smICA"]
-        # for d in FoldersToBackup:
         print("[Updater] Updating software directories")
         dpg.set_item_label("progress_button", "Updating software directories")
         source = os.path.join(updt_dir, "src")
         target = os.path.join(current_dir)
-        # print(source)
-        # print(target)
         shutil.copytree(
             source,
             target,
@@ -355,7 +341,6 @@ class FcsITUpdater:
         )
 
         dpg.set_item_label("progress_button", "Removing temporary files")
-        # shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def download_update(
         self,
@@ -714,8 +699,6 @@ class _init_Menu:
             self.callback_full_screen('fullscreenclick',app_data)
         
     def callback_help(self,sender,app_data):
-        # url = os.path.join(self.docs_dir,'index.html')
-        # webbrowser.open(url,new=2)
         self.show_docs_callback()
         
     def callback_license(self,sender,app_data):
@@ -807,7 +790,6 @@ class _init_Menu:
             with dpg.menu(label="Settings",tag='menu_settings_dropout'):
                 dpg.add_menu_item(label="Full Screen (F11)",tag='fullscreenclick',callback=self.callback_full_screen)
                 dpg.add_menu_item(label="Settings",
-                                  # callback=lambda: dpg.show_item("Settings_window"),
                                   parent = 'menu_settings_dropout',
                                   before='fullscreenclick',
                                   tag='sett_menu_item')
@@ -1013,9 +995,7 @@ class sett_window:
                            height = Settings_window['height'],
                            pos = Settings_window['pos']
                           )
-        # print(dpg.get_item_width('Settings_window'),dpg.get_item_height('Settings_window'))
         button_pos = (left_indent,dpg.get_item_height('Settings_window')-24-bottom_indent)
-        # print(button_pos)
         dpg.configure_item('default_theme_group',
                            horizontal_spacing = group_spacer
                           )
@@ -1109,10 +1089,7 @@ class sett_window:
     
 
     def UnMountSettingsWindow(self):
-        # print('Unmounting')
-        # print(self.settings_items)
         for item in self.settings_items:
-            # print(item)
             dpg.delete_item(item)
     def MountSettingsWindow(self):
         with dpg.window(label='Settings',
@@ -1446,7 +1423,6 @@ class sett_window:
                                        width = self.Setts_save_defaults,
                                        callback=self.callback_save_as_def
                                       )
-                # dpg.bind_item_theme('Setts_save_defaults', 'fit_button_theme')
                 
                 dpg.add_button(label='Close',
                                        tag='Setts_cancel',

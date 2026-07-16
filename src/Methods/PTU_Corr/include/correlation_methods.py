@@ -182,7 +182,7 @@ def tttr2xfcs (y,num,NcascStart,NcascEnd, Nsub,tau_min,tau_max):
             autotime[k + j*Nsub] = tau_ms
         y = np.ceil(0.5 * y)
         delta *= 2.0
-    tau = autotime.flatten()  # w ms
+    tau = autotime.flatten()  # In milliseconds
     scale = np.ones_like(tau, dtype=float)
     dt_ms = dt / 1_000_000.0
     mask = tau < 0.95 * dt_ms
@@ -198,4 +198,3 @@ def tttr2xfcs (y,num,NcascStart,NcascEnd, Nsub,tau_min,tau_max):
     auto = auto[idauto, :, :]
 
     return auto, autotime
-

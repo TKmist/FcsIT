@@ -205,8 +205,8 @@ class _PTU_Corr_common:
         self.TT_subplots = self.method_init.TT_subplots
         self.TCSPC_subplots = self.method_init.TCSPC_subplots
         self.FCS_subplots = self.method_init.FCS_subplots
-        self.TCSCP_draglines = self.method_init.TCSPC_dralines_init_values.copy()#TCSCP_draglines
-        self.TCSCP_draglines_init = self.method_init.TCSPC_dralines_init_values.copy()#TCSCP_draglines.copy()
+        self.TCSCP_draglines = self.method_init.TCSPC_dralines_init_values.copy()
+        self.TCSCP_draglines_init = self.method_init.TCSPC_dralines_init_values.copy()
         self.drag_line_thickness = self.method_init.drag_line_thickness
         self.directory = ''
         self.new_directory = ''
@@ -263,8 +263,8 @@ class _PTU_Corr_common:
         self.status_label_0 = 'Calculating '
         self.status_label_N = ''
 
-        self._chunk_draglines = []          # tagi dragline’ów, które stworzyliśmy
-        self._bulk_updating_chunks = False  # blokada ciężkich aktualizacji w callbackach (opcjonalnie)
+        self._chunk_draglines = []          # Tags of the drag lines created here
+        self._bulk_updating_chunks = False  # Optionally block expensive updates in callbacks
 
         self.TCSPC_BUTTONS = [
             'Calculate_filter_once_button',
@@ -394,9 +394,8 @@ class _PTU_Corr_common:
     #########################################################################   
 
     def _after_chunks_changed(self):
-        # jedna, wspólna ścieżka “commit”
+        # Single shared commit path
         self.META_data['TT info'] = self.TT_snapshot()
-        # if dpg.get_value('Custom_chunks_check'):
         self.calculate_shade()
         self.plot_TT()
 
@@ -455,7 +454,7 @@ class _PTU_Corr_common:
     
         for chunk_name, chunk in self.chunks.items():
     
-            # chunk boundaries z dragline/time trace
+            # Chunk boundaries from the drag line and time trace
             t0 = chunk["values"][0]   # [s]
             t1 = chunk["values"][1]   # [s]
     
@@ -473,13 +472,13 @@ class _PTU_Corr_common:
                 else:
                     continue
     
-                # absolutny czas fotonów [s]
+                # Absolute photon time [s]
                 time_s = (
                     self.fcs_data.PHOTONS[ch]['sync'].astype(np.float64)
                     * global_resolution
                 )
     
-                # mapowanie zakresu czasu -> zakres fotonów
+                # Map the time range to the photon range
                 i0 = np.searchsorted(time_s, t0, side="left")
                 i1 = np.searchsorted(time_s, t1, side="right")
     
@@ -499,43 +498,43 @@ class _PTU_Corr_common:
         """
     
         nchunks = int(dpg.get_value('left_panel_N_chunks'))
-        xdata = self.TT_xdata_1  # rosnące
+        xdata = self.TT_xdata_1  # Ascending
     
-        # --- init cache tagów (żeby nie używać dpg.get_aliases())
+        # Initialize the tag cache to avoid using dpg.get_aliases()
         if not hasattr(self, "_chunk_draglines"):
             self._chunk_draglines = []
     
-        # --- 1) usuń stare dragline’y tylko z własnej listy (brak leaka)
+        # 1. Remove old drag lines only from the owned list to prevent leaks
         for tag in self._chunk_draglines:
             if dpg.does_item_exist(tag):
                 dpg.delete_item(tag)
         self._chunk_draglines.clear()
     
-        # --- 2) usuń stare wpisy chunków z globalITEMS.windows (żeby nie rosło)
+        # 2. Remove old chunk entries from globalITEMS.windows to prevent growth
         if hasattr(self, "globalITEMS") and hasattr(self.globalITEMS, "windows"):
             self.globalITEMS.windows = [
                 w for w in self.globalITEMS.windows
                 if not (isinstance(w, str) and w.startswith("Chunk_") and w.endswith("_dragline"))
             ]
     
-        # --- 3) kanały danych (do nazwy ch1/ch2 i struktury tcspc)
+        # 3. Get data channels for ch1/ch2 names and the TCSPC structure
         photon_channels = [ch for ch in self.fcs_data.PHOTONS.keys() if ch.startswith("channel_")]
         photon_channels.sort()
-        nsel = len(self.channels)  # 1 lub 2
+        nsel = len(self.channels)  # 1 or 2
     
-        # --- 4) węzły TT (indeksy)
+        # 4. Calculate TT nodes (indices)
         nodes = np.linspace(0, len(xdata), nchunks + 1).astype(int)
     
-        # --- 5) jeśli reset=False, ale chunks brak / zła długość -> wymuś reset
+        # 5. Force a reset if chunks are missing or have the wrong length
         if not reset:
             if (not hasattr(self, "chunks")) or (not isinstance(self.chunks, dict)) or (len(self.chunks) != nchunks):
                 reset = True
     
-        # --- 6) zbuduj domyślne chunki, jeśli reset
+        # 6. Build default chunks when resetting
         if reset:
             self.chunks = {}
     
-            # minimalnie: values+indices; tcspc możesz uzupełnić później w callbacku dragu
+            # Store values and indices; TCSPC can be completed later in the drag callback
             if nsel == 1 and len(photon_channels) >= 1:
                 ch0 = photon_channels[0]
                 chn = 'ch1' if ch0.endswith('_0') else ('ch2' if ch0.endswith('_1') else 'ch1')
@@ -550,7 +549,7 @@ class _PTU_Corr_common:
                     self.chunks[f"chunk_{i}"] = {
                         "values": [v0, v1],
                         "indices": [a, b],
-                        "tcspc": {chn: [0, 0]},   # placeholder, policzysz przy pierwszym dragu / osobno
+                        "tcspc": {chn: [0, 0]},   # Placeholder calculated on the first drag or separately
                     }
                 else:
                     self.chunks[f"chunk_{i}"] = {
@@ -559,13 +558,13 @@ class _PTU_Corr_common:
                         "tcspc": {"ch1": [0, 0], "ch2": [0, 0]},  # placeholder
                     }
     
-        # --- 7) utwórz dragline’y na bazie self.chunks
+        # 7. Create drag lines from self.chunks
         new_window_tags = []
     
         for i in range(nchunks):
             ch = self.chunks.get(f"chunk_{i}")
             if ch is None:
-                # awaryjnie, gdy self.chunks jest niekompletne:
+                # Fallback for incomplete self.chunks
                 a = int(nodes[i])
                 b = int(nodes[i + 1]) - 1
                 v0 = float(xdata[a])
@@ -599,7 +598,7 @@ class _PTU_Corr_common:
             self._chunk_draglines.extend([t1s, t1e])
             new_window_tags.extend([t1s, t1e])
     
-            # plot_2 jeśli 2 kanały
+            # Use plot_2 for two channels
             if nsel == 2:
                 t2s = f"Chunk_2_{i+1}_start_dragline"
                 t2e = f"Chunk_2_{i+1}_stop_dragline"
@@ -626,7 +625,7 @@ class _PTU_Corr_common:
                 self._chunk_draglines.extend([t2s, t2e])
                 new_window_tags.extend([t2s, t2e])
     
-        # --- 8) zapisz tagi w globalITEMS.windows (bez leaka, bo wcześniej czyściliśmy)
+        # 8. Store tags in globalITEMS.windows after clearing old entries
         if hasattr(self, "globalITEMS") and hasattr(self.globalITEMS, "windows"):
             self.globalITEMS.windows.extend(new_window_tags)
     
@@ -636,243 +635,18 @@ class _PTU_Corr_common:
         self._build_tcspc_time_cache() 
         if self.fcs_data.PHOTONS['Mode'] != 'CW':
             
-            self._recompute_tcspc_for_all_chunks()# aktualny dataset
+            self._recompute_tcspc_for_all_chunks()# Current dataset
         else:
             self._recompute_photon_for_all_chunks()
-                # wypełnij tcspc od razu
+                # Populate TCSPC immediately
 
 
 
     
-    # def add_chunks(self):
-    #     nchunks = int(dpg.get_value('left_panel_N_chunks'))
-    #     xdata = self.TT_xdata_1
-    
-    #     chunk_nodes = np.linspace(0, len(xdata), nchunks + 1).astype(int)
-    
-    #     channels = [ch for ch in self.fcs_data.PHOTONS.keys() if ch.startswith('channel_')]
-    #     nsel = len(self.channels)
-    
-    #     if nsel >= 1:
-    #         chan = channels[0]
-    #         chunk_TCSPC_CH1_nodes = np.linspace(
-    #             0, len(self.fcs_data.PHOTONS[chan]['exact_time']), nchunks + 1
-    #         ).astype(int)
-    #     if nsel == 2:
-    #         chan = channels[1]
-    #         chunk_TCSPC_CH2_nodes = np.linspace(
-    #             0, len(self.fcs_data.PHOTONS[chan]['exact_time']), nchunks + 1
-    #         ).astype(int)
-    
-    #     self.chunks = {}
-    #     if nsel == 1:
-    #         chan = channels[0]
-    #         chn = 'ch1' if chan.endswith('_0') else ('ch2' if chan.endswith('_1') else 'ch1')
-    
-    #     for i in range(nchunks):
-    #         ind_min = chunk_nodes[i]
-    #         ind_max = chunk_nodes[i + 1]
-    #         stop_ix = ind_max - 1
-    
-    #         # xdata rosnące => min/max z brzegów (dokładnie to samo)
-    #         mn = xdata[ind_min]
-    #         mx = xdata[stop_ix]
-    
-    #         if nsel == 1:
-    #             self.chunks[f'chunk_{i}'] = {
-    #                 'values': [mn, mx],
-    #                 'indices': [ind_min, stop_ix],
-    #                 'tcspc': {chn: [chunk_TCSPC_CH1_nodes[i], chunk_TCSPC_CH1_nodes[i + 1] - 1]},
-    #             }
-    #         else:
-    #             self.chunks[f'chunk_{i}'] = {
-    #                 'values': [mn, mx],
-    #                 'indices': [ind_min, stop_ix],
-    #                 'tcspc': {
-    #                     'ch1': [chunk_TCSPC_CH1_nodes[i], chunk_TCSPC_CH1_nodes[i + 1] - 1],
-    #                     'ch2': [chunk_TCSPC_CH2_nodes[i], chunk_TCSPC_CH2_nodes[i + 1] - 1],
-    #                 },
-    #             }
-    
-    #     # --- szybkie kasowanie: nie skanuj aliasów
-    #     if not hasattr(self, "_chunk_draglines"):
-    #         self._chunk_draglines = []
-    #     for tag in self._chunk_draglines:
-    #         if dpg.does_item_exist(tag):
-    #             dpg.delete_item(tag)
-    #     self._chunk_draglines.clear()
-    
-    #     new_window_tags = []
-    
-    #     # --- tworzenie dragline; potem callback bez get_value
-    #     for i in range(nchunks):
-    #         v0, v1 = self.chunks[f'chunk_{i}']['values']
-    
-    #         t1s = f"Chunk_1_{i+1}_start_dragline"
-    #         t1e = f"Chunk_1_{i+1}_stop_dragline"
-    #         dpg.add_drag_line(label=f"Chunk {i+1} start", tag=t1s, color=[255, 0, 0, 255],
-    #                           default_value=v0, parent='plot_1', show=False, callback=self.on_drag_line_drag)
-    #         dpg.add_drag_line(label=f"Chunk {i+1} stop", tag=t1e, color=[255, 0, 0, 255],
-    #                           default_value=v1, parent='plot_1', show=False, callback=self.on_drag_line_drag)
-    
-    #         self._chunk_draglines += [t1s, t1e]
-    #         new_window_tags += [t1s, t1e]
-    
-    #         if nsel == 2:
-    #             t2s = f"Chunk_2_{i+1}_start_dragline"
-    #             t2e = f"Chunk_2_{i+1}_stop_dragline"
-    #             dpg.add_drag_line(label=f"Chunk {i+1} start", tag=t2s, color=[255, 0, 0, 255],
-    #                               default_value=v0, parent='plot_2', show=False, callback=self.on_drag_line_drag)
-    #             dpg.add_drag_line(label=f"Chunk {i+1} stop", tag=t2e, color=[255, 0, 0, 255],
-    #                               default_value=v1, parent='plot_2', show=False, callback=self.on_drag_line_drag)
-    
-    #             self._chunk_draglines += [t2s, t2e]
-    #             new_window_tags += [t2s, t2e]
-    #     self.globalITEMS.windows = [w for w in self.globalITEMS.windows if not (w.startswith("Chunk_") and w.endswith("_dragline"))]
-    #     self.globalITEMS.windows.extend(new_window_tags)
-    
-    #     # init callback bez get_value
-    #     for i in range(nchunks):
-    #         v0, v1 = self.chunks[f'chunk_{i}']['values']
-    #         self.callback_chunk_drag_line(f"Chunk_1_{i+1}_start_dragline", v0, None)
-    #         self.callback_chunk_drag_line(f"Chunk_1_{i+1}_stop_dragline",  v1, None)
-    
-    #     self.show_chunks_drag_lines('Custom_chunks_check', dpg.get_value('Custom_chunks_check'))
-    #     self.META_data['TT info'] = self.TT_snapshot()
-    #     if dpg.get_value('Custom_chunks_check'):
-    #         self.calculate_shade()
-    #         self.plot_TT()
-    #     self.META_data['TT info'] = self.TT_snapshot()
-        
-    # def add_chunks(self):
-    #     nchunks = dpg.get_value('left_panel_N_chunks')
-    #     xdata = self.TT_xdata_1
-    #     chunk_nodes = np.linspace(0,len(xdata),nchunks+1).astype(int)
-    #     channels = [ch for ch in self.fcs_data.PHOTONS.keys() if ch.startswith('channel_')]
-    #     if len(self.channels) == 1:
-    #         chan = channels[0]
-    #         chunk_TCSPC_CH1_nodes = np.linspace(0,len(self.fcs_data.PHOTONS[chan]['exact_time']),nchunks+1).astype(int)
-    #     if len(self.channels) == 2:
-    #         chan = channels[0]
-    #         chunk_TCSPC_CH1_nodes = np.linspace(0,len(self.fcs_data.PHOTONS[chan]['exact_time']),nchunks+1).astype(int)
-    #         chan = channels[1]
-    #         chunk_TCSPC_CH2_nodes = np.linspace(0,len(self.fcs_data.PHOTONS[chan]['exact_time']),nchunks+1).astype(int)
-    #     self.chunks = {}
-    #     for i in range(nchunks):
-    #         if len(self.channels) ==1:
-    #             chan = channels[0]
-    #             if chan.endswith('_0'):
-    #                 chn='ch1'
-    #             elif chan.endswith('_1'):
-    #                 chn='ch2'
-    #             ind_min = chunk_nodes[0+i]
-    #             ind_max = chunk_nodes[1+i]
-    #             mn, mx = xdata[ind_min:ind_max-1].min(),xdata[ind_min:ind_max-1].max()
-    #             self.chunks['chunk_'+str(i)] = {'values':[mn,mx],
-    #                                        'indices':[ind_min,ind_max-1],
-    #                                             'tcspc':{chn:[chunk_TCSPC_CH1_nodes[0+i],chunk_TCSPC_CH1_nodes[1+i]-1]}
-    #                                       }
-    #         elif len(self.channels) ==2:
-    #             ind_min = chunk_nodes[0+i]
-    #             ind_max = chunk_nodes[1+i]
-    #             mn, mx = xdata[ind_min:ind_max-1].min(),xdata[ind_min:ind_max-1].max()
-    #             self.chunks['chunk_'+str(i)] = {'values':[mn,mx],
-    #                                        'indices':[chunk_nodes[0+i],ind_max-1],
-    #                                             'tcspc':{'ch1':[chunk_TCSPC_CH1_nodes[0+i],chunk_TCSPC_CH1_nodes[1+i]-1],
-    #                                                     'ch2':[chunk_TCSPC_CH2_nodes[0+i],chunk_TCSPC_CH2_nodes[1+i]-1]
-    #                                                     }
-    #                                       }
-        
-    #     existing_chunks_lines = dpg.get_aliases()
-    #     existing_chunks_lines = [chL for chL in existing_chunks_lines if chL.startswith('Chunk_') and chL.endswith('_dragline')]
-    #     for chL in existing_chunks_lines:
-    #         dpg.delete_item(chL)
-    #     for i in range(nchunks):
-    #         if len(self.channels) == 1:
-    #             value = self.chunks['chunk_'+str(i)]['values'][0]
-    #             dpg.add_drag_line(label="Chunk "+str(i+1)+' start',
-    #                               tag="Chunk_1_"+str(i+1)+'_start_dragline',
-    #                               color=[255, 0, 0, 255],
-    #                               default_value = value,
-    #                               parent='plot_1',
-    #                               show=False,
-    #                               callback=self.on_drag_line_drag
-    #                               )
-                
-    #             value = self.chunks['chunk_'+str(i)]['values'][1]
-    #             dpg.add_drag_line(label="Chunk "+str(i+1)+' stop',
-    #                               tag="Chunk_1_"+str(i+1)+'_stop_dragline',
-    #                               color=[255, 0, 0, 255],
-    #                               default_value = value,
-    #                               parent='plot_1',
-    #                               show=False,
-    #                               callback=self.on_drag_line_drag
-    #                              )
-    #             self.globalITEMS.windows.extend(["Chunk_1_"+str(i+1)+'_start_dragline',
-    #                                              "Chunk_1_"+str(i+1)+'_stop_dragline'])
-                
-    #         elif len(self.channels) == 2:
-    #             value = self.chunks['chunk_'+str(i)]['values'][0]
-    #             dpg.add_drag_line(label="Chunk "+str(i+1)+' start',
-    #                               tag="Chunk_1_"+str(i+1)+'_start_dragline',
-    #                               color=[255, 0, 0, 255],
-    #                               default_value = value,
-    #                               parent='plot_1',
-    #                               show=False,
-    #                               callback=self.on_drag_line_drag
-    #                               )
-                
-    #             value = self.chunks['chunk_'+str(i)]['values'][1]
-    #             dpg.add_drag_line(label="Chunk "+str(i+1)+' stop',
-    #                               tag="Chunk_1_"+str(i+1)+'_stop_dragline',
-    #                               color=[255, 0, 0, 255],
-    #                               default_value = value,
-    #                               parent='plot_1',
-    #                               show=False,
-    #                               callback=self.on_drag_line_drag
-    #                              )
-                
-    #             value = self.chunks['chunk_'+str(i)]['values'][0]
-    #             dpg.add_drag_line(label="Chunk "+str(i+1)+' start',
-    #                               tag="Chunk_2_"+str(i+1)+'_start_dragline',
-    #                               color=[255, 0, 0, 255],
-    #                               default_value = value,
-    #                               parent='plot_2',
-    #                               show=False,
-    #                               callback=self.on_drag_line_drag
-    #                               )
-                
-    #             value = self.chunks['chunk_'+str(i)]['values'][1]
-    #             dpg.add_drag_line(label="Chunk "+str(i+1)+' stop',
-    #                               tag="Chunk_2_"+str(i+1)+'_stop_dragline',
-    #                               color=[255, 0, 0, 255],
-    #                               default_value = value,
-    #                               parent='plot_2',
-    #                               show=False,
-    #                               callback=self.on_drag_line_drag
-    #                              )
-                
-    #             self.globalITEMS.windows.extend(["Chunk_1_"+str(i+1)+'_start_dragline',
-    #                                              "Chunk_1_"+str(i+1)+'_stop_dragline',
-    #                                              "Chunk_2_"+str(i+1)+'_start_dragline',
-    #                                              "Chunk_2_"+str(i+1)+'_stop_dragline'])
-                
-    #     for i in range(nchunks):
-    #         value = dpg.get_value("Chunk_1_"+str(i+1)+'_start_dragline')
-    #         self.callback_chunk_drag_line("Chunk_1_"+str(i+1)+'_start_dragline',value,None)
-    #         value = dpg.get_value("Chunk_1_"+str(i+1)+'_stop_dragline')
-    #         self.callback_chunk_drag_line("Chunk_1_"+str(i+1)+'_stop_dragline',value,None)
-        
-    #     self.show_chunks_drag_lines('Custom_chunks_check',dpg.get_value('Custom_chunks_check'))
-    #     self.META_data['TT info']=self.TT_snapshot()
-    #     if dpg.get_value('Custom_chunks_check'):
-    #         self.calculate_shade()
-    #         self.plot_TT()
-    #     self.META_data['TT info']=self.TT_snapshot()
                     
     def on_chunks_released(self):
         value = dpg.get_value("left_panel_N_chunks")
-        self.add_chunks(reset=True)   # albo reset=False
+        self.add_chunks(reset=True)   # Alternatively, use reset=False
         self._after_chunks_changed()      
 
     def transfer_chunks_to_TT(self):
@@ -957,10 +731,10 @@ class _PTU_Corr_common:
         nchunks = int(dpg.get_value('left_panel_N_chunks'))
         nsel = len(self.channels)
     
-        # OFF -> reset tylko jeśli wolno
+        # When disabled, reset only if allowed
         if (not show) and allow_reset:
             self.add_chunks(reset=True)
-            # po add_chunks liczba dragline może się zmienić, więc pobierz ponownie
+            # The number of drag lines may change after add_chunks, so fetch them again
             nchunks = int(dpg.get_value('left_panel_N_chunks'))
         else:
             self.calculate_shade()
@@ -1000,7 +774,7 @@ class _PTU_Corr_common:
             self.TT_xdata_2=(self.fcs_data.timetrace[list(self.channels)[1]].time_interval*1e-9).values
             self.TT_ydata_2=(self.fcs_data.timetrace[list(self.channels)[1]].occurrences).values
         
-        self.add_chunks(reset=True)   # albo reset=False
+        self.add_chunks(reset=True)   # Alternatively, use reset=False
         self._after_chunks_changed()
         if len(self.channels) == 1:
             BGLvL = (dpg.get_value('TCSPC_BG_dline_ch1'),None)
@@ -1118,10 +892,10 @@ class _PTU_Corr_common:
             chunks = self.META_data['TT info'].get('chunks')
             
             if isinstance(chunks, dict) and chunks:
-                self.add_chunks(reset=False)   # albo reset=False
+                self.add_chunks(reset=False)   # Keep existing chunks
                 self._after_chunks_changed()
             else:
-                self.add_chunks(reset=True)   # albo reset=False
+                self.add_chunks(reset=True)   # Alternatively, use reset=False
                 self._after_chunks_changed()
         else:
             if len(self.channels) == 1:
@@ -1131,7 +905,7 @@ class _PTU_Corr_common:
                 BGLvL =(self.auto_bg_lvl('ch1'),self.auto_bg_lvl('ch2'))
                 dpg.set_value('TCSPC_BG_dline_ch1',BGLvL[0])
                 dpg.set_value('TCSPC_BG_dline_ch2',BGLvL[1])
-            self.add_chunks(reset=True)   # albo reset=False
+            self.add_chunks(reset=True)   # Alternatively, use reset=False
             self._after_chunks_changed()
         self.callback_tcspc_timegate('TCSPC_timegate_check',dpg.get_value('TCSPC_timegate_check')) 
         self.plot_TCSPC(BGLvL)
@@ -1680,12 +1454,6 @@ class _PTU_Corr_common:
     ######################################################################### 
     
         
-    # def test_read(self,file):
-        
-    #     ptu_file  = PTUreader(file, print_header_data = False)
-    #     submode = ptu_file.head["Measurement_SubMode"]
-    #     cond = (submode == 1) or (submode == 0)
-    #     return cond
 
     def test_read(self, file):
         submode = PTUHeaderReader.read_tag_fast(file, "Measurement_SubMode")
@@ -1878,7 +1646,7 @@ class _PTU_Corr_common:
             return i_start, i_stop
 
     def callback_chunk_drag_line(self, sender, app_data, user_data):
-        # --- alias + tryb (bulk vs real drag)
+        # Resolve the alias and mode (bulk update or real drag)
         if isinstance(sender, int):
             line_name = dpg.get_item_alias(sender)
             fake_sender = False
@@ -1887,23 +1655,23 @@ class _PTU_Corr_common:
             line_name = sender
             fake_sender = True
     
-        # --- value: preferuj app_data
+        # Prefer the value supplied in app_data
         value = app_data if app_data is not None else dpg.get_value(line_name)
     
         binw = float(dpg.get_value('left_panel_drag_time_binning'))
         nchunks = int(dpg.get_value('left_panel_N_chunks'))
     
         xdata1 = self.TT_xdata_1
-        maxtime = float(xdata1[-1])  # xdata rosnące
+        maxtime = float(xdata1[-1])  # xdata is ascending
     
-        # realne kanały w danych
+        # Actual channels available in the data
         photon_channels = self._get_photon_channels()
-        nsel = len(self.channels)  # zostawiamy Twoją logikę wyboru 1/2
-        # ale zabezpiecz się:
+        nsel = len(self.channels)  # Preserve the existing one/two-channel selection logic
+        # Guard against inconsistent channel counts
         if nsel == 2 and len(photon_channels) < 2:
             nsel = 1
     
-        # parsowanie nazwy
+        # Parse the name
         parts = line_name.split('_')
         chunk_num = int(parts[2]) - 1
         chunk_line_end = parts[3]
@@ -1911,7 +1679,7 @@ class _PTU_Corr_common:
         t_start_1 = f"Chunk_1_{chunk_num+1}_start_dragline"
         t_stop_1  = f"Chunk_1_{chunk_num+1}_stop_dragline"
     
-        # --- clamp (Twoja logika; ograniczona liczba get_value)
+        # Clamp values while limiting get_value calls
         if nsel == 1:
             if chunk_line_end == 'start':
                 stop_val = float(dpg.get_value(t_stop_1))
@@ -2000,14 +1768,14 @@ class _PTU_Corr_common:
                 co_line = line_name.replace('Chunk_2', 'Chunk_1')
             dpg.set_value(co_line, value)
     
-        # --- indeks TT
+        # Calculate the TT index
         ind = int(np.rint(value / binw))
         if ind < 0:
             ind = 0
         elif ind >= len(xdata1):
             ind = len(xdata1) - 1
     
-        # start/stop z Chunk_1
+        # Read start and stop values from Chunk_1
         minval = float(dpg.get_value(t_start_1))
         maxval = float(dpg.get_value(t_stop_1))
         minvind = int(np.rint(minval / binw))
@@ -2015,7 +1783,7 @@ class _PTU_Corr_common:
         
         ch = self.chunks[f'chunk_{chunk_num}']
         
-        # --- aktualizacja values/indices (jak u Ciebie)
+        # Update values and indices using the existing behavior
         if chunk_line_end == 'start':
             ch['values'][0] = float(xdata1[ind])
             ch['indices'][0] = ind
@@ -2027,7 +1795,7 @@ class _PTU_Corr_common:
             ch['values'][0] = minval
             ch['indices'][0] = minvind
         
-        # --- NOWE: TCSPC przez exact_time + searchsorted
+        # Calculate TCSPC using exact_time and searchsorted
         cache = getattr(self, "_tcspc_cache", None)
         if not cache:
             self._build_tcspc_time_cache()
@@ -2055,7 +1823,7 @@ class _PTU_Corr_common:
             ch['tcspc']['ch1'][1] = e1
             ch['tcspc']['ch2'][0] = s2
             ch['tcspc']['ch2'][1] = e2
-        # meta + ciężkie rzeczy tylko przy realnym dragu
+        # Update metadata and perform expensive work only for a real drag
         self.META_data['TT info'] = self.TT_snapshot()
         if not fake_sender:
             self.calculate_shade()
@@ -2063,212 +1831,6 @@ class _PTU_Corr_common:
 
 
     
-    # def callback_chunk_drag_line(self,sender,app_data,user_data):
-    #     chunk_line = sender
-    #     if isinstance(chunk_line, int):
-    #         line_name = dpg.get_item_alias(chunk_line)
-    #         fake_sender = False
-    #         dpg.configure_item('Update_TCSPC_histogram', enabled=True)
-    #     elif isinstance(chunk_line, str):
-    #         line_name = sender
-    #         fake_sender = True
-            
-    #     value = dpg.get_value(line_name)
-    #     xdata1 = self.TT_xdata_1
-    #     maxtime = xdata1.max()
-    #     if len(self.channels) == 2:
-    #         xdata2 = self.TT_xdata_2
-    #     else:
-    #         pass
-    #     chunk_num = int(line_name.split('_')[2])-1
-    #     chunk_line_end = line_name.split('_')[3]
-    #     if len(self.channels) == 1:
-    #         if chunk_line_end == 'start':
-    #             if value>=dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_stop_dragline'):
-    #                 dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_stop_dragline'))
-    #             else:
-    #                 if chunk_num !=0:
-    #                     if value<dpg.get_value('Chunk_1_'+str(chunk_num)+'_stop_dragline'):
-    #                         dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num)+'_stop_dragline'))
-    #                         value = dpg.get_value('Chunk_1_'+str(chunk_num)+'_stop_dragline')
-    #                 else:
-    #                     if value<0:
-    #                         dpg.set_value(sender,0)
-    #                     else:
-    #                         pass
-    #         elif chunk_line_end == 'stop':
-    #             if value<dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_start_dragline'):
-    #                 dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_start_dragline'))
-    #             else:
-    #                 if chunk_num+1 !=dpg.get_value('left_panel_N_chunks'):
-    #                     try:
-    #                         if value>dpg.get_value('Chunk_1_'+str(chunk_num+2)+'_start_dragline'):
-    #                             dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num+2)+'_start_dragline'))
-    #                             value = dpg.get_value('Chunk_1_'+str(chunk_num+2)+'_start_dragline')
-    #                     except:
-    #                         pass
-    #                 else:
-    #                     if value>self.chunks['chunk_'+str(chunk_num)]['values'][1]:
-    #                         dpg.set_value(sender,self.chunks['chunk_'+str(chunk_num)]['values'][1])
-    #                     else:
-    #                         pass
-    #     elif len(self.channels) == 2:
-    #         if chunk_line_end == 'start':
-    #             if value>dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_stop_dragline') or value>dpg.get_value('Chunk_2_'+str(chunk_num+1)+'_stop_dragline'):
-    #                 dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_stop_dragline'))
-    #                 dpg.set_value(sender,dpg.get_value('Chunk_2_'+str(chunk_num+1)+'_stop_dragline'))
-    #             else:
-    #                 if chunk_num !=0:
-    #                     if value<dpg.get_value('Chunk_1_'+str(chunk_num)+'_stop_dragline') or value<dpg.get_value('Chunk_2_'+str(chunk_num)+'_stop_dragline'):
-    #                         dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num)+'_stop_dragline'))
-    #                         dpg.set_value(sender,dpg.get_value('Chunk_2_'+str(chunk_num)+'_stop_dragline'))
-    #                         value = dpg.get_value('Chunk_1_'+str(chunk_num)+'_stop_dragline')
-    #                 else:
-    #                     if value<0:
-    #                         dpg.set_value(sender,0)
-    #                     else:
-    #                         pass
-    #         elif chunk_line_end == 'stop':
-    #             if value<dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_start_dragline') or  value<dpg.get_value('Chunk_2_'+str(chunk_num+1)+'_start_dragline'):
-    #                 dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_start_dragline'))
-    #                 dpg.set_value(sender,dpg.get_value('Chunk_2_'+str(chunk_num+1)+'_start_dragline'))
-    #                 value = dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_start_dragline')
-    #             else:
-    #                 if chunk_num+1 !=dpg.get_value('left_panel_N_chunks'):
-    #                     if value>dpg.get_value('Chunk_1_'+str(chunk_num+2)+'_start_dragline') or value>dpg.get_value('Chunk_2_'+str(chunk_num+2)+'_start_dragline'):
-    #                         dpg.set_value(sender,dpg.get_value('Chunk_1_'+str(chunk_num+2)+'_start_dragline'))
-    #                         dpg.set_value(sender,dpg.get_value('Chunk_2_'+str(chunk_num+2)+'_start_dragline'))
-    #                 else:
-    #                     if value>maxtime:
-    #                         dpg.set_value(sender,maxtime)
-    #                     else:
-    #                         pass
-    #         value = dpg.get_value(line_name)
-                
-    #         if 'Chunk_1' in line_name:
-    #             co_line_name = line_name.replace('Chunk_1','Chunk_2')
-            
-    #         elif 'Chunk_2' in line_name:
-    #             co_line_name = line_name.replace('Chunk_2','Chunk_1')
-    #         dpg.set_value(co_line_name,value)                            
-    #     ind =int(np.round(value/dpg.get_value('left_panel_drag_time_binning')))
-    #     minval= dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_start_dragline')
-    #     maxval= dpg.get_value('Chunk_1_'+str(chunk_num+1)+'_stop_dragline')   
-
-
-    #     if chunk_line_end == 'start':
-    #         self.chunks['chunk_'+str(chunk_num)]['values'][0] = xdata1[ind]
-    #         self.chunks['chunk_'+str(chunk_num)]['indices'][0] = ind
-    #         self.chunks['chunk_'+str(chunk_num)]['values'][1] = maxval
-    #         self.chunks['chunk_'+str(chunk_num)]['indices'][1] = int(np.round(maxval/dpg.get_value('left_panel_drag_time_binning')))
-    #         if len(self.channels) == 1:
-    #             chan  = list(self.channels)[0]
-    #             ind_array1= np.round(self.fcs_data.PHOTONS[chan]['exact_time']/dpg.get_value('left_panel_drag_time_binning')).astype(int)
-    #             if ind in ind_array1:
-    #                 tcspcind1_s = self.find_all_occurrences(ind_array1,ind)[0]
-    #             else:
-    #                 tcspcind1_s = self.find_closest(ind_array1,ind,False)
-    #             maxvind = int(np.round(maxval/dpg.get_value('left_panel_drag_time_binning')))
-    #             if maxvind in ind_array1:
-    #                 tcspcind1_e = self.find_all_occurrences(ind_array1,maxvind)[-1]
-    #             else: 
-    #                 tcspcind1_e = self.find_closest(ind_array1,maxvind,True)
-    #             chan = list(self.channels)[0]
-    #             if chan.endswith('_0'):
-    #                 chn = 'ch1'
-    #             elif chan.endswith('_1'):
-    #                 chn = 'ch2'
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc'][chn][0] = tcspcind1_s
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc'][chn][1] = tcspcind1_e
-            
-    #         if len(self.channels) == 2:
-    #             chan  = list(self.channels)[0]
-    #             ind_array1= np.round(self.fcs_data.PHOTONS[chan]['exact_time']/dpg.get_value('left_panel_drag_time_binning')).astype(int)
-    #             chan  = list(self.channels)[1]
-    #             ind_array2= np.round(self.fcs_data.PHOTONS[chan]['exact_time']/dpg.get_value('left_panel_drag_time_binning')).astype(int)
-    #             if ind in ind_array1:
-    #                 tcspcind1_s = self.find_all_occurrences(ind_array1,ind)[0]
-    #             else:
-    #                 tcspcind1_s = self.find_closest(ind_array1,ind,False)
-    #             maxvind = int(np.round(maxval/dpg.get_value('left_panel_drag_time_binning')))
-    #             if maxvind in ind_array1:
-    #                 tcspcind1_e = self.find_all_occurrences(ind_array1,maxvind)[-1]
-    #             else: 
-    #                 tcspcind1_e = self.find_closest(ind_array1,maxvind,True)
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch1'][0] = tcspcind1_s
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch1'][1] = tcspcind1_e
-    #             if ind in ind_array2:
-    #                 tcspcind2_s = self.find_all_occurrences(ind_array2,ind)[0]
-    #             else:
-    #                 tcspcind2_s = self.find_closest(ind_array2,ind,False)
-    #             if maxvind in ind_array2:
-    #                 tcspcind2_e = self.find_all_occurrences(ind_array2,maxvind)[-1]
-    #             else: 
-    #                 tcspcind2_e = self.find_closest(ind_array2,maxvind,True)
-               
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch2'][0] = tcspcind2_s
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch2'][1] = tcspcind2_e
-
-        
-    #     elif chunk_line_end == 'stop':
-    #         if ind >np.argmax(xdata1):
-    #             self.chunks['chunk_'+str(chunk_num)]['values'][1] = xdata1[np.argmax(xdata1)]
-    #         else:
-    #             self.chunks['chunk_'+str(chunk_num)]['values'][1] = xdata1[ind]
-    #         self.chunks['chunk_'+str(chunk_num)]['indices'][1] = ind
-    #         self.chunks['chunk_'+str(chunk_num)]['values'][0] = minval
-    #         self.chunks['chunk_'+str(chunk_num)]['indices'][0] = int(np.round(minval/dpg.get_value('left_panel_drag_time_binning')))
-    #         minvind = int(np.round(minval/dpg.get_value('left_panel_drag_time_binning')))
-    #         if len(self.channels) == 1:
-    #             chan  = list(self.channels)[0]
-    #             ind_array1= np.round(self.fcs_data.PHOTONS[chan]['exact_time']/dpg.get_value('left_panel_drag_time_binning')).astype(int)
-    #             if minvind in ind_array1:
-    #                 # tcspcind1_s = np.where(ind_array1==minvind)[0][0]
-    #                 tcspcind1_s = self.find_all_occurrences(ind_array1,minvind)[0]
-    #             else:
-    #                 tcspcind1_s = self.find_closest(ind_array1,minvind,False)
-    #             if ind in ind_array1: 
-    #                 tcspcind1_e = self.find_all_occurrences(ind_array1,ind)[-1]
-    #             else:
-    #                 tcspcind1_e =self.find_closest(ind_array1,ind,True)
-    #             chan = list(self.channels)[0]
-    #             if chan.endswith('_0'):
-    #                 chn = 'ch1'
-    #             elif chan.endswith('_1'):
-    #                 chn = 'ch2'
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc'][chn][0] = tcspcind1_s
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc'][chn][1] = tcspcind1_e
-    #         if len(self.channels) == 2:
-    #             chan  = list(self.channels)[0]    
-    #             ind_array1= np.round(self.fcs_data.PHOTONS[chan]['exact_time']/dpg.get_value('left_panel_drag_time_binning')).astype(int)
-    #             chan  = list(self.channels)[1]
-    #             ind_array2= np.round(self.fcs_data.PHOTONS[chan]['exact_time']/dpg.get_value('left_panel_drag_time_binning')).astype(int)
-    #             if minvind in ind_array1:
-    #                 tcspcind1_s = self.find_all_occurrences(ind_array1,minvind)[0]
-    #             else:
-    #                 tcspcind1_s = self.find_closest(ind_array1,minvind,False)
-    #             if ind in ind_array1: 
-    #                 tcspcind1_e = self.find_all_occurrences(ind_array1,ind)[-1]
-    #             else:
-    #                 tcspcind1_e =self.find_closest(ind_array1,ind,True)
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch1'][0] = tcspcind1_s
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch1'][1] = tcspcind1_e
-    #             if minvind in ind_array2:
-    #                 tcspcind2_s = self.find_all_occurrences(ind_array2,minvind)[0]
-    #             else:
-    #                 tcspcind2_s = self.find_closest(ind_array2,minvind,False)
-    #             if ind in ind_array2: 
-    #                 tcspcind2_e = self.find_all_occurrences(ind_array2,ind)[-1]
-    #             else:
-    #                 tcspcind2_e = self.find_closest(ind_array2,ind,True)
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch2'][0] = tcspcind2_s
-    #             self.chunks['chunk_'+str(chunk_num)]['tcspc']['ch2'][1] = tcspcind2_e
-
-    #     self.META_data['TT info']=self.TT_snapshot()
-
-    #     if not fake_sender:
-    #         self.calculate_shade()
-    #         self.plot_TT()
             
         
     def calculate_shade(self):
@@ -2766,7 +2328,6 @@ class _PTU_Corr_common:
         
         
     def Correlating(self,sender):
-        # t0 = time.perf_counter()
         is_Two_channel = len(self.channels) == 2
         bintime = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
         npoints = dpg.get_value('left_panel_drag_subs')
@@ -2776,11 +2337,8 @@ class _PTU_Corr_common:
         nsub = int(np.floor(npoints / decades))
         nsub = max(1, nsub)
         chunks = list(self.META_data['TT info']['chunks'].keys())
-        # t_setup = time.perf_counter() - t0
 
-        # t0 = time.perf_counter()
         self.autoNorm_ch_1,self.autoNorm_ch_2,self.CrossNorm_ch_1,self.CrossNorm_ch_2,self.DictOfChunks =self.fcs_data._CORRELATE(chunks,nsub,npoints,tau_min,tau_max,self.META_data,sender)
-        # t_core = time.perf_counter() - t0
 
             
     def callback_crossCorr_check(self,sender,app_data):
@@ -2971,8 +2529,6 @@ class _PTU_Corr_common:
             self.callback_tcspc_BG('TCSPC_BG_correction_check',dpg.get_value('TCSPC_BG_correction_check'))
             dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
             dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
-            # self.add_chunks(reset=True)   # albo reset=False
-            # self._after_chunks_changed()
             self.TCSPC_filtering('Calculate_filter_all_button',sender=sender)
             self._PCKL_DATA()
         dpg.bind_item_theme('Calculate_filter_all_button', "fit_button_theme")
@@ -3029,8 +2585,6 @@ class _PTU_Corr_common:
                     pass
                 dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
                 dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
-                # self.add_chunks(reset=True)   # albo reset=False
-                # self._after_chunks_changed()
                 self.Correlating(sender)
                 self.plot_FCS()
                 self._PCKL_DATA()
@@ -3177,7 +2731,7 @@ class _PTU_Corr_common:
         
     def _apply_chunks_to_gui_fast(self):
         nsel = len(self.channels)
-        # iteruj deterministycznie po chunk_0..chunk_{n-1}
+        # Iterate deterministically over chunk_0 through chunk_{n-1}
         nchunks = int(dpg.get_value('left_panel_N_chunks'))
         for i in range(nchunks):
             ch = self.chunks.get(f"chunk_{i}")

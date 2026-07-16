@@ -86,10 +86,6 @@ class _FCS_Fitting_init:
         self.group_spacer = int(group_spacer*self.size_ratio['width'])
         self.fnt_ratio = (self.size_ratio['width'] + self.size_ratio['height']) / 2
         self.font_size = int(np.round(font_size * self.fnt_ratio, 0))
-        # self.Settings_window = {'width':600,
-        #                       'height':550,
-        #                       'pos':(300,200)
-        #                         }
         
 
         dpg.set_global_font_scale(self.fnt_ratio)
@@ -208,7 +204,6 @@ class _FCS_Fitting_init:
 ###############################################################################
 
 class _FCS_Fitting_vars_funct:
-    # lprint = _bf.lnprint
     def __init__(self,
                  size_ratio,
                  group_spacer,
@@ -1249,7 +1244,7 @@ class _FCS_Fitting_vars_funct:
         p-value jakości dopasowania (goodness-of-fit) na bazie χ².
         Zakłada poprawne wagi: weights = 1/sigma.
         """
-        chi2_obs = result.chisqr      # suma [(y - yhat)/sigma]^2
+        chi2_obs = result.chisqr      # Sum of [(y - yhat)/sigma]^2
         dof      = result.nfree       # N - k
         p_gof = 1 - chi2.cdf(chi2_obs, dof)  # P(Χ²_ν ≥ χ²_obs)
         return chi2_obs, dof, p_gof
@@ -2382,7 +2377,6 @@ class _FCS_Fitting_vars_funct:
             ax2.plot(xdata,res,ls ='-',lw = 3,c='C1')
             ax1.tick_params('both',labelsize=19)
             ax2.tick_params('both',labelsize=19)
-            # print(dpg.get_item_configuration('acf_y_log')['label'])
             ax1.set_ylabel(dpg.get_item_configuration('acf_y_log')['label'],
                            fontsize=22)
             ax2.set_ylabel(r'Res.', fontsize=22)
