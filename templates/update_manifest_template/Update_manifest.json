@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "migration_id": "replace-with-unique-migration-id",
+  "message": "Describe the required update migration and its user-visible impact.",
+  "python_packages": [
+    {
+      "requirement": "package-name>=1.0",
+      "import_name": "package_name"
+    }
+  ],
+  "copy_files": [
+    {
+      "source": "res/update_payload/linux/example-tool",
+      "target": "../example-tool",
+      "platform": "linux",
+      "executable": true
+    }
+  ],
+  "remove_files": [
+    "relative/path/below/FcsIT/to/obsolete_file.py"
+  ],
+  "requires_restart": true
+}

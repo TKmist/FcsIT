@@ -154,6 +154,7 @@ globalITEMS.windows.extend(['file_window',
 
 
 
+# print('Dialog windows of the method - mounted')
 
 #########################################################################
 '''Items in the left panel'''

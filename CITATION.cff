@@ -6,7 +6,7 @@ authors:
     affiliation: Institute of Physical Chemistry, Polish Academy of Sciences
     orcid: https://orcid.org/0000-0003-1136-9789
 title: "FcsIT - A simple and easy-to-use tool for correlating and fitting the fluorescence correlation spectroscopy (FCS) data."
-version: 1.0.7
+version: 2.0.0c
 identifiers:
   - type: doi
     value: 10.5281/zenodo.1234

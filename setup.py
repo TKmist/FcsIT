@@ -1,13 +1,34 @@
-import sys
-from setuptools import setup, find_packages
-from setuptools.command.install import install
 import os
-import urllib.request
+import re
 
-version_path='VERSION'#os.path.join('src',)
+from setuptools import find_packages, setup
 
-with open(version_path, 'r') as file:
-    VERSION = file.read()
+version_path = "VERSION"
+
+with open(version_path, "r", encoding="utf-8") as file:
+    APP_VERSION = file.read().strip()
+
+
+def to_pep440_version(version):
+    """Convert FcsIT's optional letter suffix to a valid PEP 440 version."""
+    match = re.fullmatch(
+        r"[vV]?(\d+)\.(\d+)\.(\d+)(?:(rc\d+)|([a-zA-Z]))?",
+        version,
+    )
+    if match is None:
+        raise ValueError(f"Invalid FcsIT version: {version!r}")
+
+    major, minor, patch, release_candidate, letter = match.groups()
+    normalized = f"{major}.{minor}.{patch}"
+    if release_candidate is not None:
+        return normalized + release_candidate.lower()
+    if letter is not None:
+        development_number = ord(letter.lower()) - ord("a") + 1
+        return f"{normalized}.dev{development_number}"
+    return normalized
+
+
+PACKAGE_VERSION = to_pep440_version(APP_VERSION)
 
 win_packages = ['pywin32']
 basic_packages = [
@@ -27,6 +48,7 @@ basic_packages = [
     "decorator==5.2.1",
     "opencv-python==4.11.0.86",
     "scikit-image==0.25.2",
+    "phconvert>=0.9.1",
 ]
 req_pack = []
 if os.name == 'nt':
@@ -35,53 +57,13 @@ elif os.name == 'posix':
     req_pack = basic_packages
 
 
-class runInstall(install):
-    """Download `readPTU_FLIM.py` from GitHub."""
-
-        
-    def run(self):
-        # Run the standard install first
-        install.run(self)
-        
-        # Read installer decision from environment
-        flag = os.environ.get("FCSIT_DOWNLOAD_READPTU_FLIM", "").strip().lower()
-        download_enabled = flag in ("1", "true", "yes", "y", "on")
-        
-        if not download_enabled:
-            print("Skipping download of readPTU_FLIM.py (FCSIT_DOWNLOAD_READPTU_FLIM=0).")
-            return
-        
-        # Specify the URL of the file on GitHub
-        url = "https://raw.githubusercontent.com/TKmist/readPTU_FLIM/refs/heads/NIKON_correction/readPTU_FLIM.py"
-        
-        # Specify the target directory (e.g., where your package installs files)
-        target_directory = os.path.join(os.path.dirname(__file__), "src","Methods","PTU_Corr","include","Third_party")
-        target_file = os.path.join(target_directory, "readPTU_FLIM.py")
-        
-        # Ensure the target directory exists
-        os.makedirs(target_directory, exist_ok=True)
-        
-        # Download the file
-        try:
-            print(f"Downloading `readPTU_FLIM.py` from {url} to {target_file}...")
-            urllib.request.urlretrieve(url, target_file)
-            print("\nDownload complete.\n")
-        except Exception as e:
-            print(f"\nFailed to download `readPTU_FLIM.py`: {e}")
-            print(f"Please manually download the file from: {url}")
-            print(f"Once downloaded, place it in the following directory: {target_directory}\n")
-
-
 setup(
     name='FcsIT',
-    version=VERSION,
+    version=PACKAGE_VERSION,
     packages=find_packages(),
     include_package_data=True,
     install_requires=req_pack,
     python_requires='>=3.11.5',
-    cmdclass={
-        'install': runInstall,  # Replace the install command
-    },
     author='TKmist',
     license='GPL-3.0+',
 

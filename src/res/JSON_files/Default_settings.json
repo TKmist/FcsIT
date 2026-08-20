@@ -1,6 +1,5 @@
 {
     "Sett_export_each": true,
-    "Sett_export_to_excel": false,
     "Sett_export_plot_as_png": true,
     "Sett_export_to_csv": true,
     "Sett_export_plot_as_csv": false,
@@ -9,7 +8,6 @@
     "Sett_export_stats": true,
     "Sett_export_plot_loglog": true,
     "Sett_export_stats_to_csv": false,
-    "Sett_export_stats_to_xlsx": true,
     "Sett_export_stats_to_pickle": true,
     "Sett_preserve_time": true,
     "Sett_preserve_units": false,

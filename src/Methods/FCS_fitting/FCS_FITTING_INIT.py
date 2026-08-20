@@ -47,10 +47,16 @@ import argparse
 from functools import wraps
 from datetime import datetime
 import inspect
+import re
 
 from include.INIT import _basicF as _bf
+from include.sandwich_errors import sandwich_standard_errors
 
 logfile=os.path.join('Logs','log.txt')
+
+def natural_sort_key(value):
+    return [int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r'(\d+)', str(value))]
 
 ###############################################################################
 ###############################################################################
@@ -60,7 +66,7 @@ logfile=os.path.join('Logs','log.txt')
 
 
 class _FCS_Fitting_init:
-    
+
     lprint = _bf.lnprint
     def __init__(self,
                  size_ratio,
@@ -86,6 +92,10 @@ class _FCS_Fitting_init:
         self.group_spacer = int(group_spacer*self.size_ratio['width'])
         self.fnt_ratio = (self.size_ratio['width'] + self.size_ratio['height']) / 2
         self.font_size = int(np.round(font_size * self.fnt_ratio, 0))
+        # self.Settings_window = {'width':600,
+        #                       'height':550,
+        #                       'pos':(300,200)
+        #                         }
         
 
         dpg.set_global_font_scale(self.fnt_ratio)
@@ -204,6 +214,7 @@ class _FCS_Fitting_init:
 ###############################################################################
 
 class _FCS_Fitting_vars_funct:
+    # lprint = _bf.lnprint
     def __init__(self,
                  size_ratio,
                  group_spacer,
@@ -324,6 +335,9 @@ class _FCS_Fitting_vars_funct:
         self.init_model = ''
         self.res_dict= {}
         self.reserr_dict = {}
+        self.lag_covariance = None
+        self.lag_covariance_counts = None
+        self.error_method = 'LM diagonal'
         self.workspace_iso = {}
         self.workspace_iso_path = ''
         self.FCS_data_type = '3C'
@@ -1244,7 +1258,7 @@ class _FCS_Fitting_vars_funct:
         p-value jakości dopasowania (goodness-of-fit) na bazie χ².
         Zakłada poprawne wagi: weights = 1/sigma.
         """
-        chi2_obs = result.chisqr      # Sum of [(y - yhat)/sigma]^2
+        chi2_obs = result.chisqr      # suma [(y - yhat)/sigma]^2
         dof      = result.nfree       # N - k
         p_gof = 1 - chi2.cdf(chi2_obs, dof)  # P(Χ²_ν ≥ χ²_obs)
         return chi2_obs, dof, p_gof
@@ -1289,12 +1303,53 @@ class _FCS_Fitting_vars_funct:
         fit_output = self.fit_function(self.df,params)
         chi2_obs, dof, p_gof = self.gof_pvalue_from_result(fit_output)
         self.res_dict={v:float(fit_output.best_values[v]) for v in self.VARIABLES}
-        self.reserr_dict={v+'_err':fit_output.params[v].stderr for v in self.VARIABLES}
+        lm_errors = {v: fit_output.params[v].stderr for v in self.VARIABLES}
+        reported_errors = lm_errors.copy()
+        self.error_method = 'LM diagonal'
+        if (
+            self.lag_covariance is not None
+            and self.FCS_data_type == 'bin'
+            and 'Y_err' in self.df.columns
+        ):
+            positions = np.asarray(self.df.index, dtype=int)
+            covariance = self.lag_covariance[np.ix_(positions, positions)]
+            try:
+                if self.lag_covariance_counts is not None:
+                    effective_counts = self.lag_covariance_counts[
+                        np.ix_(positions, positions)
+                    ]
+                    maximum_count = int(np.max(effective_counts))
+                    minimum_fraction = (
+                        float(np.min(effective_counts)) / maximum_count
+                        if maximum_count > 0 else 0.0
+                    )
+                    if minimum_fraction < 0.8:
+                        raise ValueError(
+                            "fewer than 80% of bootstrap replicates jointly "
+                            "cover at least one fitted lag pair"
+                        )
+                sandwich_errors, self.parameter_covariance = \
+                    sandwich_standard_errors(
+                        fit_output,
+                        self.df.X.to_numpy(dtype=float),
+                        self.df.Y_err.to_numpy(dtype=float),
+                        covariance,
+                    )
+                reported_errors.update(sandwich_errors)
+                self.error_method = 'post-hoc sandwich'
+            except (ValueError, np.linalg.LinAlgError) as exc:
+                self.lprint(f"Sandwich errors unavailable: {exc}")
+        self.reserr_dict = {
+            v + '_err': reported_errors[v] for v in self.VARIABLES
+        }
         if any([self.reserr_dict[v+'_err'] is None for v in self.VARIABLES] ):
             self.reserr_dict={v+'_err':float(0.0) for v in self.VARIABLES}
             self.update_error_list(self.anal_file)    
         else:
-            self.reserr_dict={v+'_err':float(fit_output.params[v].stderr) for v in self.VARIABLES}
+            self.reserr_dict = {
+                v + '_err': float(self.reserr_dict[v + '_err'])
+                for v in self.VARIABLES
+            }
             if not all([self.reserr_dict[v+'_err'] is None for v in self.VARIABLES] ):
                 
                 self.checkIfFitCorrected(self.anal_file)
@@ -1858,9 +1913,6 @@ class _FCS_Fitting_vars_funct:
             
         if dpg.get_value('Sett_export_each'):
             fname = dpg.get_value('default_quick_export_filename')
-            if dpg.get_value('Sett_export_to_excel'):
-                pth = os.path.join(self.last_directory,fname+'.xlsx')
-                self.RES_DF.to_excel(os.path.join(pth),index=False)
             if dpg.get_value('Sett_export_to_csv'):
                 pth = os.path.join(self.last_directory,fname+'.csv')
                 self.RES_DF.to_csv(os.path.join(pth),index=False)
@@ -1960,6 +2012,25 @@ class _FCS_Fitting_vars_funct:
         if self.FCS_data_type == "bin":
             with open(f_path, 'rb') as file:
                 data = pickle.load(file)
+            correlated_chunks = data.get('CorrelatedChunks')
+            covariance = getattr(correlated_chunks, 'attrs', {}).get(
+                'lag_covariance'
+            )
+            covariance_counts = getattr(
+                correlated_chunks, 'attrs', {}
+            ).get('lag_covariance_counts')
+            if covariance is None:
+                covariance = data.get('LagCovariance')
+            if covariance_counts is None:
+                covariance_counts = data.get('LagCovarianceCounts')
+            self.lag_covariance = (
+                np.asarray(covariance, dtype=float)
+                if covariance is not None else None
+            )
+            self.lag_covariance_counts = (
+                np.asarray(covariance_counts, dtype=np.int64)
+                if covariance_counts is not None else None
+            )
             if not dpg.get_value('Sett_preserve_units'):
                 dpg.set_value('Xunits',0.001)
                 dpg.set_value('Yunits',1.)
@@ -2015,6 +2086,8 @@ class _FCS_Fitting_vars_funct:
             dpg.configure_item('df_max', default_value=top_range)
         
         elif self.FCS_data_type == "3C":
+            self.lag_covariance = None
+            self.lag_covariance_counts = None
             cnt,self.df = self.count_skiprows(f_path)
             if not dpg.get_value('Sett_preserve_units'):
                 dpg.set_value('Xunits',0.001)
@@ -2062,6 +2135,8 @@ class _FCS_Fitting_vars_funct:
             dpg.configure_item('df_max', default_value=top_range)
 
         elif self.FCS_data_type == "2C":
+            self.lag_covariance = None
+            self.lag_covariance_counts = None
             cnt,self.df = self.count_skiprows(f_path)
             self.df.columns=['X','Y']
             dpg.configure_item('df_min', show=True)
@@ -2377,6 +2452,7 @@ class _FCS_Fitting_vars_funct:
             ax2.plot(xdata,res,ls ='-',lw = 3,c='C1')
             ax1.tick_params('both',labelsize=19)
             ax2.tick_params('both',labelsize=19)
+            # print(dpg.get_item_configuration('acf_y_log')['label'])
             ax1.set_ylabel(dpg.get_item_configuration('acf_y_log')['label'],
                            fontsize=22)
             ax2.set_ylabel(r'Res.', fontsize=22)
@@ -2426,8 +2502,6 @@ class _FCS_Fitting_vars_funct:
         with open(self.workspace_iso_path, 'w') as json_workspace:
             json.dump(self.workspace_iso, json_workspace, indent=4, sort_keys=False)
         export_path = app_data['file_path_name']
-        if app_data['current_filter']=='.xlsx':
-            self.RES_DF.to_excel(export_path,index=False)
         if app_data['current_filter']=='.csv':
             self.RES_DF.to_csv(export_path,index=False,sep=',')
         if app_data['current_filter']=='.dat':
@@ -2436,8 +2510,6 @@ class _FCS_Fitting_vars_funct:
             self.RES_DF.to_pickle(export_path)
         if app_data['current_filter']=='':
             extension = app_data['file_name'].split('.')[1]
-            if extension=='xlsx':
-                self.RES_DF.to_excel(export_path,index=False)
             if extension=='csv':
                 self.RES_DF.to_csv(export_path,index=False,sep=',')
             if extension=='dat':
@@ -2453,8 +2525,6 @@ class _FCS_Fitting_vars_funct:
                 report_DF.to_csv(report_f_path+'.csv')
             if dpg.get_value('Sett_export_stats_to_pickle'):
                 report_DF.to_pickle(report_f_path+'.pickle')
-            if dpg.get_value('Sett_export_stats_to_xlsx'):
-                report_DF.to_excel(report_f_path+'.xlsx')
         else:
             pass
             
@@ -2754,7 +2824,7 @@ class _FCS_Fitting_vars_funct:
             self.files=()
             self.filesbin=()
             _FCSDATATYPE_initcommoncommands()
-            self.files=tuple(np.sort([f for f in os.listdir(self.last_directory) if f.endswith(".corr")]))
+            self.files=tuple(sorted([f for f in os.listdir(self.last_directory) if f.endswith(".corr")], key=natural_sort_key))
             if len(self.files)==0:
                 self.show_error_no_files()
             else:
@@ -2769,7 +2839,7 @@ class _FCS_Fitting_vars_funct:
             self.files=()
             self.files3=()
             _FCSDATATYPE_initcommoncommands()
-            self.files=tuple(np.sort([f for f in os.listdir(self.last_directory) if f.endswith(".dat")]))
+            self.files=tuple(sorted([f for f in os.listdir(self.last_directory) if f.endswith(".dat")], key=natural_sort_key))
             if len(self.files)==0:
                 self.show_error_no_files()
             else:
@@ -2791,8 +2861,8 @@ class _FCS_Fitting_vars_funct:
             self.files=()
             self.files2=()
             _FCSDATATYPE_initcommoncommands()
-            self.csv_files = tuple(np.sort([f for f in os.listdir(self.last_directory) if f.endswith(".csv")]))
-            self.files=tuple(np.sort([f for f in os.listdir(self.last_directory) if f.endswith(".dat")]))
+            self.csv_files = tuple(sorted([f for f in os.listdir(self.last_directory) if f.endswith(".csv")], key=natural_sort_key))
+            self.files=tuple(sorted([f for f in os.listdir(self.last_directory) if f.endswith(".dat")], key=natural_sort_key))
             if len(self.files)==0:
                 if len(self.csv_files)==0:
                     self.show_error_no_files()
@@ -2963,4 +3033,3 @@ class _FCS_Fitting_vars_funct:
         dpg.configure_item('multi_file_dialog_id', default_path=last_directory)
 
 
-    

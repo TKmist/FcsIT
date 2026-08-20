@@ -224,6 +224,10 @@ with dpg.table(header_row=False,
                            max_value = 1e5,
                            )
 
+# dpg.add_text(default_value='OUTPUT DIRECTORY:',tag='display_savepath_text_tile',parent='file_window')
+# dpg.add_text(default_value='',tag='display_savepath_text',parent='file_window')
+# with dpg.tooltip('display_savepath_text',tag='display_savepath_text_tooltip'):
+#     dpg.add_text(dpg.get_value('display_savepath_text'),tag='display_savepath_text_tooltip_text')
 dpg.add_separator(tag ='sep_left_3',parent='file_window')          
 dpg.add_button(label="Calculate correlation once",
                tag='Correlate_once_button',
@@ -273,6 +277,8 @@ globalITEMS.windows.extend(['FILES_window_text_title',
                             'Correlate_all_button_tooltip',
                             'Correlate_all_button_tooltip_text',
                            'sep_left_3',
+                            # 'display_savepath_text',
+                            # 'display_savepath_text_tile',
                            ])
 
 

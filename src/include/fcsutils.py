@@ -25,7 +25,12 @@ from lmfit import Model
 from numpy.linalg import inv, det,cond,pinv
 import matplotlib.pyplot as plt
 from functools import wraps
-from Methods.PTU_Corr.include.Third_party.readPTU_FLIM import PTUreader
+from pathlib import Path
+try:
+    from phconvert.pqreader import load_pt3, load_ptu
+except ImportError:
+    load_pt3 = None
+    load_ptu = None
 from Methods.PTU_Corr.include.correlation_methods import tttr2xfcs
 import time
 import socket
@@ -100,6 +105,7 @@ def _fcs_compute_mean_std_kernel_numba(X, Ki_eps, block_idx):
 
     boot_mean_avg = np.empty(Tn, dtype=np.float64)
     std_boot = np.empty(Tn, dtype=np.float64)
+    bootstrap_curves = np.empty((B, Tn), dtype=np.float64)
 
     for i in prange(Tn):
         any_positive_weight = False
@@ -112,6 +118,7 @@ def _fcs_compute_mean_std_kernel_numba(X, Ki_eps, block_idx):
         if not any_positive_weight:
             boot_mean_avg[i] = np.nan
             std_boot[i] = np.nan
+            bootstrap_curves[:, i] = np.nan
             continue
 
         boot_means = np.empty(B, dtype=np.float64)
@@ -142,13 +149,76 @@ def _fcs_compute_mean_std_kernel_numba(X, Ki_eps, block_idx):
             else:
                 boot_means[b] = np.nan
 
+            bootstrap_curves[b, i] = boot_means[b]
+
         mu = _fcs_nanmean_1d_numba(boot_means)
         sd = _fcs_nanstd_sample_1d_numba(boot_means, mu)
 
         boot_mean_avg[i] = mu
         std_boot[i] = sd
 
-    return boot_mean_avg, std_boot
+    return boot_mean_avg, std_boot, bootstrap_curves
+
+
+def _bootstrap_covariance(bootstrap_curves):
+    """Return PSD lag covariance and pairwise effective replicate counts."""
+    curves = np.asarray(bootstrap_curves, dtype=float)
+    n_lags = curves.shape[1]
+    if curves.shape[0] < 2:
+        return (
+            np.zeros((n_lags, n_lags), dtype=float),
+            np.zeros((n_lags, n_lags), dtype=np.int64),
+        )
+    if np.all(np.isfinite(curves)):
+        covariance = np.atleast_2d(np.cov(curves, rowvar=False, ddof=1))
+        counts = np.full(covariance.shape, curves.shape[0], dtype=np.int64)
+        return covariance, counts
+
+    covariance = np.zeros((n_lags, n_lags), dtype=float)
+    counts = np.zeros((n_lags, n_lags), dtype=np.int64)
+    for left in range(n_lags):
+        for right in range(left, n_lags):
+            valid = np.isfinite(curves[:, left]) & np.isfinite(curves[:, right])
+            counts[left, right] = np.count_nonzero(valid)
+            counts[right, left] = counts[left, right]
+            value = 0.0
+            if np.count_nonzero(valid) > 1:
+                value = np.cov(
+                    curves[valid, left], curves[valid, right], ddof=1
+                )[0, 1]
+            covariance[left, right] = value
+            covariance[right, left] = value
+
+    # Pairwise deletion can produce an indefinite matrix. Project its
+    # correlation form onto the PSD cone and restore the original variances.
+    variance = np.clip(np.diag(covariance), 0.0, None)
+    scale = np.sqrt(variance)
+    positive = scale > 0.0
+    correlation = np.eye(n_lags, dtype=float)
+    denominator = scale[:, None] * scale[None, :]
+    np.divide(
+        covariance, denominator, out=correlation,
+        where=(denominator > 0.0),
+    )
+    correlation = np.clip(0.5 * (correlation + correlation.T), -1.0, 1.0)
+    eigenvalues, eigenvectors = np.linalg.eigh(correlation)
+    correlation = (eigenvectors * np.clip(eigenvalues, 0.0, None)) @ eigenvectors.T
+    normalization = np.sqrt(np.clip(np.diag(correlation), 1e-15, None))
+    correlation /= normalization[:, None] * normalization[None, :]
+    covariance = correlation * denominator
+    covariance[~positive, :] = 0.0
+    covariance[:, ~positive] = 0.0
+    np.fill_diagonal(covariance, variance)
+    return covariance, counts
+
+
+def _attach_lag_covariance(frame, bootstrap_result, lag_times):
+    """Attach lag uncertainty metadata when a correlation curve exists."""
+    if frame is None:
+        return
+    frame.attrs['lag_covariance'] = bootstrap_result[2]
+    frame.attrs['lag_covariance_counts'] = bootstrap_result[3]
+    frame.attrs['lag_times'] = np.asarray(lag_times, dtype=float)
 
 
 class load_fcs:
@@ -165,6 +235,16 @@ class load_fcs:
         self.inactive_decay_hist = {}
         self.active_decay_hist_subtracted = {}
         
+        # self.calculate_stat_filter = self.timed(self.calculate_stat_filter)
+        # self.weight_filtering_chunk = self.timed(self.weight_filtering_chunk)
+        # self.prepare_for_corr = self.timed(self.prepare_for_corr)
+        # self.make_log_grid_ms = self.timed(self.make_log_grid_ms)
+        # self.rebin_tau_to_grid = self.timed(self.rebin_tau_to_grid)
+        # self.rebin_chunk_to_grid = self.timed(self.rebin_chunk_to_grid)
+        # self.rebin_to_grid = self.timed(self.rebin_to_grid)
+        # self.correlate_chunk = self.timed(self.correlate_chunk)
+        # self._compute_MEAN_STD = self.timed(self._compute_MEAN_STD)
+        # self._CORRELATE = self.timed(self._CORRELATE)
         if file == None and time_bin == None:
             pass
 
@@ -188,7 +268,9 @@ class load_fcs:
     
 
     def timed(self, func):
-        enabled = False
+        enabled = False#True#self.basf.ENABLE_TIMING
+        # cwd = os.getcwd()
+        # tfile = os.path.join(cwd,self.basf.TIMING_FILE)
         @wraps(func)
         def wrapper(*args, **kwargs):
             if not enabled:
@@ -206,55 +288,90 @@ class load_fcs:
     
     def calculate_photons(self):
         PHOTS = {}
-        ok, ptu_file = self.test_read(self.file)
-        self.TTTR_Mode = ptu_file.rec_type_r[ptu_file.head['TTResultFormat_TTTRRecType']]
-        if ok:
-            self.fcs_data = self.get_fcs_data(ptu_file)  
-            PHOTS, TAU_RES = self.extract_photons(self.fcs_data)
-        else:
-            print('wrong data file')
-            TAU_RES = None
+        self.fcs_data = self.load_data(self.file)
+        PHOTS, TAU_RES = self.extract_photons(self.fcs_data)
         return PHOTS, TAU_RES
-        
-    def test_read(self, file):
-        ptu_file = PTUreader(file, print_header_data=False)
-        submode = ptu_file.head["Measurement_SubMode"]
-        cond = (submode == 1) or (submode == 0)
-        return cond, ptu_file
-    
-    
-    def get_fcs_data(self,ptu_file):
-        '''This function is an analogy to function get_flim_data_stack from the readPTU_FLIM package.'''
 
-        
-        if 'UsrPulseCfg' in list(ptu_file.head.keys()):
-            header_variables  = [ptu_file.head["MeasDesc_Resolution"],
-                                          ptu_file.head["MeasDesc_GlobalResolution"],
-                                          ptu_file.head['Measurement_SubMode'],
-                                          ptu_file.head['TTResult_SyncRate'],
-                                          ptu_file.head['UsrPulseCfg']]
+    @staticmethod
+    def _unpack_phconvert_result(result):
+        """Normalize return values from supported phconvert versions."""
+        if len(result) == 5:
+            timestamps, detectors, nanotimes, metadata, marker_ids = result
+        elif len(result) == 4:
+            timestamps, detectors, nanotimes, metadata = result
+            marker_ids = np.empty(0, dtype=np.uint8)
         else:
-            header_variables  = [ptu_file.head["MeasDesc_Resolution"],
-                                          ptu_file.head["MeasDesc_GlobalResolution"],
-                                          ptu_file.head['Measurement_SubMode'],
-                                          ptu_file.head['TTResult_SyncRate'],
-                                          'CW']
-        
-        sync        = ptu_file.sync 
-        tcspc       = ptu_file.tcspc
-        channel     = ptu_file.channel 
-        special     = ptu_file.special 
-        
-        del ptu_file.sync, ptu_file.tcspc, ptu_file.channel , ptu_file.special
-        return sync,tcspc,channel, special, header_variables
-    
-    def load_data(self,file):
-        ptu_file  = PTUreader(file, print_header_data = False)
-        return self.get_fcs_data(ptu_file)
+            raise ValueError(
+                f"Unexpected phconvert result containing {len(result)} values."
+            )
+        return timestamps, detectors, nanotimes, metadata, marker_ids
+
+    def load_data(self, file):
+        """Load PicoQuant PTU or PT3 TTTR events with phconvert."""
+        if load_ptu is None or load_pt3 is None:
+            raise RuntimeError(
+                "PTU/PT3 support requires phconvert. Install it from the "
+                "FcsIT dependency update dialog and restart FcsIT."
+            )
+        suffix = Path(file).suffix.lower()
+        if suffix == '.ptu':
+            result = load_ptu(file, return_marker=True, ovcfunc='base')
+        elif suffix == '.pt3':
+            result = load_pt3(file)
+        else:
+            raise ValueError(
+                f"Unsupported file type {suffix!r}; expected .ptu or .pt3."
+            )
+
+        timestamps, detectors, nanotimes, metadata, marker_ids = \
+            self._unpack_phconvert_result(result)
+        timestamps = np.asarray(timestamps, dtype=np.uint64)
+        detectors = np.asarray(detectors)
+        marker_ids = np.asarray(marker_ids)
+
+        photon_mask = ~np.isin(detectors, marker_ids)
+        if suffix == '.pt3':
+            photon_mask &= detectors != 15
+        timestamps = timestamps[photon_mask]
+        detectors = detectors[photon_mask]
+
+        if nanotimes is None:
+            nanotimes = np.zeros(timestamps.size, dtype=np.uint16)
+            tau_resolution = 0.0
+            mode = 'CW'
+        else:
+            nanotimes = np.asarray(nanotimes, dtype=np.uint16)[photon_mask]
+            tau_resolution = float(
+                np.asarray(metadata['nanotimes_unit']).reshape(-1)[0]
+            )
+            mode = 'Standard'
+
+        detector_ids = np.unique(detectors)
+        normalized_detectors = np.empty(detectors.shape, dtype=np.uint8)
+        for normalized_id, detector_id in enumerate(detector_ids):
+            normalized_detectors[detectors == detector_id] = normalized_id
+
+        global_resolution = float(
+            np.asarray(metadata['timestamps_unit']).reshape(-1)[0]
+        )
+        repetition_rate = metadata.get(
+            'laser_repetition_rate', 1.0 / global_resolution
+        )
+        sync_rate = int(round(float(np.asarray(repetition_rate).reshape(-1)[0])))
+        special = np.zeros(timestamps.size, dtype=np.uint8)
+        header_variables = [
+            tau_resolution, global_resolution, 0, sync_rate, mode
+        ]
+        self.TTTR_Mode = mode
+        return (
+            timestamps, nanotimes, normalized_detectors, special,
+            header_variables,
+        )
         
         
         
     def extract_photons(self,FCSDATA):
+        # print(FCSDATA)
         subMode = int(FCSDATA[4][2])
         tau_resolution = FCSDATA[4][0]*1e9 # //ns
         GlobalResolution = FCSDATA[4][1]
@@ -308,6 +425,7 @@ class load_fcs:
         trace = {}
         delta_t_ns = int(round(tb * 1e9))
         for ch in channels:
+            # print(OCCUR[ch]['time'])
             t_ns = np.floor(OCCUR[ch]['time'] + 0.5).astype(np.int64)
             offset = t_ns.min()
             bins_idx = (t_ns - offset) // delta_t_ns
@@ -318,6 +436,10 @@ class load_fcs:
                 'time_interval': time_axis,
                 'occurrences': counts
             })
+            # print(trace[ch])
+            # print('offset',offset)
+            # print('bins_idx',bins_idx)
+            # print('counts',counts)
         return trace
 
             
@@ -406,20 +528,56 @@ class load_fcs:
 
         return decays
 
+    
+    # def calculate_stat_filter(self,Pure_components_dict,raw_signal,rawx):
+    #     pure_components = []
+    #     for c in Pure_components_dict.keys():
+    #         pure_components.append(Pure_components_dict[c])
+    #     M = np.concatenate(pure_components).reshape((len(pure_components),
+    #                                                  len(pure_components[-1]))).T
+    #     I = raw_signal
+    #     diagI=np.diag(I)
+    #     try:
+    #         DET = det(diagI)
+    #     except:
+    #         DET = 0
+    #     if np.isclose(DET, 0.0, atol=1e-12) or np.isinf(DET):
+    #         invdiag = pinv(diagI)
+    #     else:
+    #         invdiag = inv(diagI)
+
+    #     A = np.dot(np.dot(M.T,invdiag),M)
+    #     if  np.isclose(det(A), 0.0, atol=1e-12):
+    #         F = np.dot(pinv(A), np.dot(M.T, invdiag))
+    #     else:
+    #         F = np.dot(inv(A), np.dot(M.T, invdiag))
+
+    #     FILTERS_dict = {}
+    #     for i,c in enumerate(Pure_components_dict.keys()):
+    #         FILTERS_dict[c]=F[i]
+    #     FILTERS_dict1 = {}  
+    #     for F_name in FILTERS_dict.keys():
+    #         F = FILTERS_dict[F_name]
+    #         F = F/np.max(F)
+    #         FILTERS_dict1[F_name] = F
+    #     FILTERS_dict1['tcscp']=(rawx/self.tau_resolution).astype(int)
+    #     return FILTERS_dict1
+
+
     def calculate_stat_filter(self, Pure_components_dict, raw_signal, rawx, atol=1e-12):
         keys = list(Pure_components_dict.keys())
     
-        # M: (N, K) — columns are p^{(k)} (TCSPC patterns)
+        # M: (N, K) — kolumny to p^{(k)} (TCSPC patterns)
         comps = np.asarray([Pure_components_dict[k] for k in keys], dtype=float)  # (K, N)
         M = comps.T  # (N, K)
     
         # I: (N,)
         I = np.asarray(raw_signal, dtype=float)
     
-        # Represent diag(I)^{-1} as a vector (exactly equivalent to inv/pinv for a diagonal matrix)
+        # diag(I)^{-1} jako wektor (dokładnie równoważne inv/pinv dla diagonali)
         invI = np.zeros_like(I)
         good = np.isfinite(I) & (np.abs(I) > atol)
-        invI[good] = 1.0 / I[good]   # Zeros remain 0, as with pinv(diag(I))
+        invI[good] = 1.0 / I[good]   # dla zer zostaje 0 -> jak pinv(diag(I))
     
         # A = M^T diag(I)^{-1} M
         MW  = M * invI[:, None]      # diag(I)^{-1} M
@@ -428,7 +586,7 @@ class load_fcs:
         # F = A^{-1} M^T diag(I)^{-1}
         RHS = MW.T                   # = M^T diag(I)^{-1}
     
-        # solve is mathematically equivalent to inv(A)@RHS in exact arithmetic
+        # solve jest matematycznie równoważne inv(A)@RHS (w arytmetyce dokładnej)
         try:
             F = np.linalg.solve(A, RHS)
         except np.linalg.LinAlgError:
@@ -451,11 +609,14 @@ class load_fcs:
                 chn = 'ch1'
             elif ch=='channel_1':
                 chn = 'ch2'
+            # chkrng  = meta['TT info']['chunks'][chnk]['tcspc'][chn]
+            # if is_cw:
+            #     chkrng = meta['TT info']['chunks'][chnk]['photon'][chn]
+            # else:
             chkrng = meta['TT info']['chunks'][chnk]['tcspc'][chn]
-            print(chnk,chkrng)
             chunk_ind = np.arange(chkrng[0],chkrng[1])
-            print('channel:',ch,'chunk_ind:',chunk_ind)
             sig_f['t'][ch] = ((self.PHOTONS[ch]['sync'][chunk_ind]*self.PHOTONS['GlobalResolution'])*1e9)
+            # sig_f['t'][ch] = ((self.PHOTONS[ch]['sync'][chunk_ind]/self.PHOTONS['sync_Rate'])*10**(9))
             sig_f['w'][ch] = np.ones(sig_f['t'][ch].size)
             if not is_cw:
                 tscpc = self.PHOTONS[ch]['tcspc'][chunk_ind]
@@ -487,7 +648,7 @@ class load_fcs:
             w_ch_1 = sig_f['w'][channels[1]]
     
         time = np.hstack((t_ch_0, t_ch_1))
-        idx = np.argsort(time, kind="stable")   # Stable sorting
+        idx = np.argsort(time, kind="stable")   # stabilne sortowanie
         time = time[idx]
         num = np.hstack((num_ch_0, num_ch_1))[idx]
         wgh = np.hstack((w_ch_0, w_ch_1))[idx]
@@ -557,8 +718,17 @@ class load_fcs:
     
     def correlate_chunk(self, t, num, nsub, npoints, tau_min, tau_max):
         autocorr, autotime = tttr2xfcs(t, num, 0, npoints, nsub, tau_min, tau_max)
+        # autocorr, autotime = tttr2xfcs_numba(t, num, 0, npoints, nsub, tau_min, tau_max)
 
-        T = float(np.max(t) - np.min(t))      # Exact duration without ceil/floor
+        # auto_old, tau_old = tttr2xfcs(t, num, 0, npoints, nsub, tau_min, tau_max)
+        # auto_new, tau_new = tttr2xfcs_numba(t, num, 0, npoints, nsub, tau_min, tau_max)
+        
+        # print('allclose',np.allclose(tau_old, tau_new, rtol=1e-12, atol=1e-12))
+        # print(np.nanmax(np.abs(auto_old - auto_new)))
+        # print(np.nanmax(np.abs(auto_old - auto_new) / (np.abs(auto_old) + 1e-12)))
+
+        
+        T = float(np.max(t) - np.min(t))      # dokładny czas, bez ceil/floor
         count0 = float(np.sum(num[:, 0]))
         count1 = float(np.sum(num[:, 1]))
         autoNorm = np.zeros_like(autocorr, dtype=float)
@@ -569,7 +739,7 @@ class load_fcs:
         if (count0 > 0) and (count1 > 0):
             autoNorm[:, 0, 1] = (autocorr[:, 0, 1] * T) / (count0 * count1) - 1.0
             autoNorm[:, 1, 0] = (autocorr[:, 1, 0] * T) / (count1 * count0) - 1.0
-        tau = np.asarray(autotime, dtype=float)   # Already 1D and expressed in seconds after the tttr2xfcs fix
+        tau = np.asarray(autotime, dtype=float)   # już 1D i w sekundach po poprawce w tttr2xfcs
         return tau, autoNorm
 
 
@@ -583,11 +753,12 @@ class load_fcs:
         M = len(cols)
         if M == 0:
             nan_series = pd.Series(np.nan, index=df.index, name='MEAN')
-            return (nan_series, nan_series)
+            return nan_series, nan_series.rename('SE'), np.empty((0, 0)), np.empty((0, 0), dtype=int)
         if M == 1:
             mean_series = df[cols[0]].rename('MEAN')
             std_series  = pd.Series(0.0, index=df.index, name='SE')
-            return mean_series, std_series
+            covariance = np.zeros((len(df), len(df)), dtype=float)
+            return mean_series, std_series, covariance, np.ones_like(covariance, dtype=int)
         X   = df[cols].to_numpy(float)   
         tau = df[tau_col].to_numpy(float)
         Tn  = len(tau)
@@ -619,6 +790,7 @@ class load_fcs:
         B = n_bootstrap
         std_boot = np.empty(Tn, float)
         boot_mean_avg = np.empty(Tn, float)
+        bootstrap_curves = np.full((B, Tn), np.nan, dtype=float)
         for i in range(Tn):
             if np.all(Ki_eps[i, :] <= 0):
                 boot_mean_avg[i] = np.nan
@@ -668,10 +840,7 @@ class load_fcs:
             else:
                 boot_mean_avg[i] = bm.mean()
                 std_boot[i] = bm.std(ddof=1)
-    
-        if block_size > 1 and M > block_size:
-            overlap_factor = np.sqrt(M / (M - block_size + 1.0))
-            std_boot *= overlap_factor
+            bootstrap_curves[:, i] = boot_mean
     
         finite = np.isfinite(std_boot)
         if not np.all(finite):
@@ -681,7 +850,8 @@ class load_fcs:
         mean_series = pd.Series(boot_mean_avg, index=df.index, name='MEAN')
         std_series  = pd.Series(std_boot,      index=df.index, name='SE')
     
-        return mean_series, std_series
+        covariance, valid_counts = _bootstrap_covariance(bootstrap_curves)
+        return mean_series, std_series, covariance, valid_counts
 
 
     def _CORRELATE(self,chunks,nsub,npoints,tau_min,tau_max,meta,sender):
@@ -693,6 +863,9 @@ class load_fcs:
         t_mean = 0.0
         t_df = 0.0
         DictOfChunks = {}
+        # _AUTOTIME = []
+        # _AUTONORM = []
+        # _ChunkLength = []
         t0 = time.perf_counter()
         centers, edges = self.make_log_grid_ms(tmin_ms=tau_min, tmax_ms=tau_max, points_per_decade=nsub)
         window=0.3*nsub
@@ -736,6 +909,7 @@ class load_fcs:
         _AUTONORM = [r[1] for r in results]
         _ChunkLength = [r[2] for r in results]
 
+        
         t0 = time.perf_counter()
         min_len = min(len(t) for t in _AUTOTIME)
         _AUTOTIME = [t[:min_len] for t in _AUTOTIME]
@@ -747,7 +921,10 @@ class load_fcs:
         CrossNorm_ch_2 = pd.DataFrame(rebinedTime,columns=['time'])
         t_df += time.perf_counter() - t0
         t0 = time.perf_counter()
+        # chan = list(meta['TCSPC info']['Filters'].keys())[0]
         for i,chunk in enumerate(_AUTONORM):
+            # if chan.endswith('_0'):
+                
             autoNorm_ch_1['ACF_chunk_'+str(i)]=self.rebin_chunk_to_grid(_AUTOTIME[0],chunk[:,0,0], centers, edges)
             autoNorm_ch_2['ACF_chunk_'+str(i)]=self.rebin_chunk_to_grid(_AUTOTIME[0],chunk[:,1,1], centers, edges)
             CrossNorm_ch_1['CCF_chunk_'+str(i)]=self.rebin_chunk_to_grid(_AUTOTIME[0],chunk[:,0,1], centers, edges)
@@ -782,22 +959,48 @@ class load_fcs:
             autoNorm_ch_1['MEAN'] = autoNorm_ch_1[[col for col in autoNorm_ch_1.columns if col.startswith('ACF_chunk_')][0]]
             CrossNorm_ch_1['MEAN']=CrossNorm_ch_1[[col for col in CrossNorm_ch_1.columns if col.startswith('CCF_chunk_')][0]]
         else:
+            # auto_ch1 = self._compute_MEAN_STD(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
+            # Cross_ch1 =  self._compute_MEAN_STD(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
             auto_ch1 = self._compute_MEAN_STD_numba(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
             Cross_ch1 =  self._compute_MEAN_STD_numba(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
+            # print(auto_ch1[0].head(),auto_ch1[1].head())
+            # print(auto_ch1_[0].head(),auto_ch1_[1].head())
             autoNorm_ch_1['MEAN'] = auto_ch1[0]
             autoNorm_ch_1['SE'] = auto_ch1[1]
             CrossNorm_ch_1['MEAN'] = Cross_ch1[0]
             CrossNorm_ch_1['SE'] = Cross_ch1[1]
+            DictOfChunks['Channel_0']['ACF_1_covariance'] = auto_ch1[2]
+            DictOfChunks['Channel_0']['CCF_1_covariance'] = Cross_ch1[2]
+            _attach_lag_covariance(
+                DictOfChunks['Channel_0']['ACF_1'], auto_ch1,
+                autoNorm_ch_1['time'].to_numpy(),
+            )
+            _attach_lag_covariance(
+                DictOfChunks['Channel_0']['CCF_1'], Cross_ch1,
+                CrossNorm_ch_1['time'].to_numpy(),
+            )
         if len(cols_ch_2) ==1:
             autoNorm_ch_2['MEAN'] = autoNorm_ch_2[[col for col in autoNorm_ch_2.columns if col.startswith('ACF_chunk_')][0]]
             CrossNorm_ch_2['MEAN']=CrossNorm_ch_2[[col for col in CrossNorm_ch_2.columns if col.startswith('CCF_chunk_')][0]]
         else:
+            # auto_ch2 = self._compute_MEAN_STD(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
+            # Cross_ch2 =  self._compute_MEAN_STD(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
             auto_ch2 = self._compute_MEAN_STD_numba(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
             Cross_ch2 =  self._compute_MEAN_STD_numba(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
             autoNorm_ch_2['MEAN'] = auto_ch2[0]
             autoNorm_ch_2['SE'] = auto_ch2[1]
             CrossNorm_ch_2['MEAN'] = Cross_ch2[0]
             CrossNorm_ch_2['SE'] = Cross_ch2[1]
+            DictOfChunks['Channel_1']['ACF_2_covariance'] = auto_ch2[2]
+            DictOfChunks['Channel_1']['CCF_2_covariance'] = Cross_ch2[2]
+            _attach_lag_covariance(
+                DictOfChunks['Channel_1']['ACF_2'], auto_ch2,
+                autoNorm_ch_2['time'].to_numpy(),
+            )
+            _attach_lag_covariance(
+                DictOfChunks['Channel_1']['CCF_2'], Cross_ch2,
+                CrossNorm_ch_2['time'].to_numpy(),
+            )
         t_mean += time.perf_counter() - t0
         autoNorm_ch_1 = autoNorm_ch_1[['time','MEAN','SE']]
         autoNorm_ch_2 = autoNorm_ch_2[['time','MEAN','SE']]
@@ -827,12 +1030,13 @@ class load_fcs:
     
         if M == 0:
             nan_series = pd.Series(np.nan, index=df.index, name='MEAN')
-            return nan_series, nan_series.rename('SE')
+            return nan_series, nan_series.rename('SE'), np.empty((0, 0)), np.empty((0, 0), dtype=int)
     
         if M == 1:
             mean_series = df[cols[0]].rename('MEAN')
             std_series = pd.Series(0.0, index=df.index, name='SE')
-            return mean_series, std_series
+            covariance = np.zeros((len(df), len(df)), dtype=float)
+            return mean_series, std_series, covariance, np.ones_like(covariance, dtype=int)
     
         X = df[cols].to_numpy(dtype=np.float64)
         tau = df[tau_col].to_numpy(dtype=np.float64)
@@ -860,8 +1064,8 @@ class load_fcs:
     
             if T_i.shape[0] != M:
                 raise ValueError(
-                    f"chunk_lengths_sec ma długość {T_i.shape[0]}, "
-                    f"a liczba kolumn chunków wynosi {M}."
+                    f"chunk_lengths_sec has length {T_i.shape[0]}, "
+                    f"but {M} chunk columns were provided."
                 )
     
         Ki = np.floor((T_i[None, :] - tau[:, None]) / dtaus[:, None])
@@ -876,15 +1080,11 @@ class load_fcs:
             seed,
         )
     
-        boot_mean_avg, std_boot = _fcs_compute_mean_std_kernel_numba(
+        boot_mean_avg, std_boot, bootstrap_curves = _fcs_compute_mean_std_kernel_numba(
             X,
             Ki_eps,
             block_idx,
         )
-    
-        if block_size > 1 and M > block_size:
-            overlap_factor = np.sqrt(M / (M - block_size + 1.0))
-            std_boot *= overlap_factor
     
         finite = np.isfinite(std_boot)
         if not np.all(finite):
@@ -894,7 +1094,8 @@ class load_fcs:
         mean_series = pd.Series(boot_mean_avg, index=df.index, name='MEAN')
         std_series = pd.Series(std_boot, index=df.index, name='SE')
     
-        return mean_series, std_series
+        covariance, valid_counts = _bootstrap_covariance(bootstrap_curves)
+        return mean_series, std_series, covariance, valid_counts
 
 
 

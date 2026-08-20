@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Copyright (C) 2026 TKmist (https://github.com/TKmist)
+#
+# This file is part of the FcsIT repository.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program. If not, see <https://www.gnu.org/licenses/>.
+# Send one FcsIT TCP/JSON command from a Bash command line.
+
+set -u
+
+server_host="${FCSIT_TCP_HOST:-127.0.0.1}"
+server_port="${FCSIT_TCP_PORT:-8765}"
+command_name="${1:-}"
+if [[ "$#" -ge 2 ]]; then
+    arguments="$2"
+else
+    arguments='{}'
+fi
+
+if [[ -z "$command_name" ]]; then
+    echo "Usage: fcsit_call COMMAND [JSON_ARGUMENTS]" >&2
+    exit 2
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "The jq command is required to build and display JSON messages." >&2
+    exit 127
+fi
+
+if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$arguments"; then
+    echo "Arguments must be a valid JSON object." >&2
+    exit 2
+fi
+
+request="$(
+    jq -cn \
+        --arg id "cli-$(date +%s%N)" \
+        --arg command "$command_name" \
+        --argjson arguments "$arguments" \
+        '{
+            protocol: "fcsit-tcp-json",
+            version: "1.0",
+            id: $id,
+            command: $command,
+            arguments: $arguments
+        } + if (env.FCSIT_TCP_TOKEN // "") != ""
+            then {token: env.FCSIT_TCP_TOKEN}
+            else {}
+            end'
+)" || exit 2
+
+if ! exec 3<>"/dev/tcp/${server_host}/${server_port}"; then
+    echo "Cannot connect to FcsIT at ${server_host}:${server_port}." >&2
+    exit 1
+fi
+
+printf '%s\n' "$request" >&3
+if ! IFS= read -r response <&3; then
+    echo "FcsIT closed the connection without a response." >&2
+    exec 3>&-
+    exec 3<&-
+    exit 1
+fi
+exec 3>&-
+exec 3<&-
+
+if ! jq . <<<"$response"; then
+    echo "FcsIT returned a response that is not valid JSON." >&2
+    exit 1
+fi
