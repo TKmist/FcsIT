@@ -21,7 +21,7 @@
   <a href="https://github.com/TKmist/FcsIT/releases/latest">
     <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download&sort=date&cacheSeconds=300" />
   </a>
-  <a href="https://doi.org/10.5281/zenodo.19351493"><img src="https://zenodo.org/badge/19351493.svg" alt="DOI"/></a>
+  <a href="https://doi.org/10.5281/zenodo.22050150"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.22050150.svg" alt="DOI"/></a>
 </p>
 
 <p align="center">
