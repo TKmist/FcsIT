@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "migration_id": "replace-readptu-with-phconvert",
+  "message": "PTU/PT3 support now uses phconvert. FcsIT must install this package in its current Python environment before PTU/PT3 analysis can be used.",
+  "python_packages": [
+    {
+      "requirement": "phconvert>=0.9.1",
+      "import_name": "phconvert"
+    }
+  ],
+  "copy_files": [
+    {
+      "source": "res/update_payload/linux/run_FcsIT",
+      "target": "../run_FcsIT",
+      "platform": "linux",
+      "executable": true,
+      "satisfied_by_text": "--tcp-server"
+    },
+    {
+      "source": "res/update_payload/linux/fcsit_call",
+      "target": "../fcsit_call",
+      "platform": "linux",
+      "executable": true
+    },
+    {
+      "source": "res/update_payload/linux/fcsit_call_completion.bash",
+      "target": "../fcsit_call_completion.bash",
+      "platform": "linux",
+      "executable": false
+    },
+    {
+      "source": "res/update_payload/windows/FcsIT.bat",
+      "target": "../FcsIT.bat",
+      "platform": "windows",
+      "executable": false,
+      "satisfied_by_text": "--tcp-server"
+    },
+    {
+      "source": "res/update_payload/windows/fcsit_call.bat",
+      "target": "../fcsit_call.bat",
+      "platform": "windows",
+      "executable": false
+    }
+  ],
+  "remove_files": [
+    "Methods/PTU_Corr/include/Third_party/readPTU_FLIM.py"
+  ],
+  "requires_restart": true
+}

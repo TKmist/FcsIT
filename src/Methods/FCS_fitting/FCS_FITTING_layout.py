@@ -89,6 +89,9 @@ method_init = _FCS_Fitting_init(inV.init_size_ratio,
                              inV.init_group_spacer,
                              inV.init_font_size,
                              basf.recall_last_directory())
+# Settings_window = method_init.Settings_window
+# execfile('Methods/FCS_fitting/Settings_Dialog.py')
+# method_init.load_default_settings()
 method_cmn = _FCS_Fitting_vars_funct(method_init.size_ratio,
                                      method_init.group_spacer,
                                      method_init.image_1['width'],
@@ -232,8 +235,7 @@ with dpg.file_dialog(directory_selector=False,
                     modal=False):
     ''' Dialogue window for exporting the results of the fitting.'''
     dpg.add_file_extension("", color=(150, 255, 150, 255))
-    dpg.add_file_extension("{.xlsx,.csv,.dat}")
-    dpg.add_file_extension(".xlsx", color=(255, 0, 255, 255), custom_text="[Excel]")
+    dpg.add_file_extension("{.csv,.dat,.pickle}")
     dpg.add_file_extension(".csv", color=(0, 255, 0, 255), custom_text="[CSV]")
     dpg.add_file_extension(".pickle", color=(0, 255, 255, 255), custom_text="[Pandas]")
 
@@ -490,5 +492,4 @@ globalITEMS.windows.extend(['log_checkbox_group',
                             'res_y',
                             'RES_plot'
                            ])
-
 

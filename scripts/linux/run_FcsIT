@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Run FcsIT with its local TCP/JSON command server enabled.
+
+set -e
+
+launcher_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$launcher_directory/FcsIT"
+exec "$launcher_directory/v_FcsIT_env/bin/python" FcsIT.py --tcp-server "$@"

@@ -15,7 +15,7 @@ for more details.
 You should have received a copy of the GNU General Public License
 along with this file. If not, see <https://www.gnu.org/licenses/>.
 """
-    
+
 
 with dpg.window(label='Settings',
                 tag="Settings_window",
@@ -90,15 +90,7 @@ with dpg.window(label='Settings',
             
             
             with dpg.table_cell(tag = 'Setts_c1_r2_cell'):
-                dpg.add_checkbox(label='Export as .xlsx',
-                             tag='Sett_export_to_excel',
-                             default_value=False,
-                             enabled = True,
-                             callback=lambda: dpg.configure_item('Setts_save_defaults',enabled=True)
-                            )
-                with dpg.tooltip('Sett_export_to_excel',tag='Setts_c1_r2_cell_tooltip'):
-                    dpg.add_text('Each data will be quick saved to ".xlsx" file.',
-                                 tag='Setts_c1_r2_cell_tooltip_text')
+                pass
                     
             with dpg.table_cell(tag = 'Setts_c2_r2_cell'):
                 dpg.add_checkbox(label='Export plot as .csv',
@@ -211,16 +203,7 @@ with dpg.window(label='Settings',
             
             
             with dpg.table_cell(tag='Setts_c1_r7_cell'):
-                dpg.add_checkbox(label="Statistics to .xlsx",
-                             tag='Sett_export_stats_to_xlsx',
-                             default_value=True,
-                             enabled = True,
-                             callback=lambda: dpg.configure_item('Setts_save_defaults',enabled=True)
-                            )
-               
-                with dpg.tooltip('Sett_export_stats_to_xlsx',tag='Setts_c1_r7_cell_tooltip'):
-                    dpg.add_text('Export stats to the ".xlsx" file.',
-                                tag='Setts_c1_r7_cell_tooltip_text')
+                pass
                     
             with dpg.table_cell(tag='Setts_c2_r7_cell'):
                 pass
@@ -376,7 +359,7 @@ settings_items = ['Settings_window',
                   'Setts_row_1',
                   'Setts_c1_r1_cell', 'Sett_export_each', 'Setts_c1_r1_cell_tooltip', 'Setts_c1_r1_cell_tooltip_text',
                   'Setts_c2_r1_cell', 'Sett_export_plot_as_png', 'Setts_c2_r1_cell_tooltip', 'Setts_c2_r1_cell_tooltip_text',
-                  'Setts_c1_r2_cell', 'Sett_export_to_excel','Setts_c1_r2_cell_tooltip','Setts_c1_r2_cell_tooltip_text',
+                  'Setts_c1_r2_cell',
                   'Setts_c2_r2_cell','Sett_export_plot_as_csv', 'Setts_c2_r2_cell_tooltip','Setts_c2_r2_cell_tooltip_text',
                   'Setts_row_3',
                   'Setts_c1_r3_cell','Sett_export_to_csv','Setts_c1_r3_cell_tooltip','Setts_c1_r3_cell_tooltip_text',
@@ -391,7 +374,7 @@ settings_items = ['Settings_window',
                   'Setts_c1_r6_cell','Sett_export_stats_to_csv','Setts_c1_r6_cell_tooltip','Setts_c1_r6_cell_tooltip_text',
                   'Setts_c2_r6_cell',
                   'Setts_row_7',
-                  'Setts_c1_r7_cell','Sett_export_stats_to_xlsx','Setts_c1_r7_cell_tooltip','Setts_c1_r7_cell_tooltip_text',
+                  'Setts_c1_r7_cell',
                   'Setts_c2_r7_cell',
                   'Setts_row_8',
                   'Setts_c1_r8_cell','Sett_export_stats_to_pickle''Setts_c1_r8_cell_tooltip','Setts_c1_r8_cell_tooltip_text'
@@ -422,5 +405,4 @@ settings_items = ['Settings_window',
 
 
 globalITEMS.windows.extend(settings_items)
-    
-    
+

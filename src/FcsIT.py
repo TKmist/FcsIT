@@ -15,11 +15,11 @@ You should have received a copy of the GNU General Public License along with
 this program. If not, see <https://www.gnu.org/licenses/>.
 '''
 
-with open('LICENSE', 'r',encoding='utf-8') as file:
+with open('LICENSE', 'r') as file:
     License = file.read()
-with open('GPLv3_short', 'r',encoding='utf-8') as file:
+with open('GPLv3_short', 'r') as file:
     License_short = file.read()
-with open('VERSION', 'r',encoding='utf-8') as file:
+with open('VERSION', 'r') as file:
     VERSION = file.read()
 line='=============================================================================='
 
@@ -30,11 +30,34 @@ import include.INIT as inits
 import argparse
 import faulthandler
 from pathlib import Path
+from include.command_dispatcher import (
+    GuiCommandDispatcher,
+    create_default_registry,
+)
+from include.tcp_server import TCPJSONCommandServer
+from include.gui_commands import register_gui_commands
 BASE_DIR = Path(__file__).resolve().parent
 DOCS_DIR = os.path.join(BASE_DIR , "doc" , "assets" , "help_html")
 faulthandler.enable()
 parser = argparse.ArgumentParser(description="Example program with optional timing log.")
 parser.add_argument("--timing", action="store_true", help="Enable timing log for functions.")
+parser.add_argument(
+    "--tcp-server",
+    action="store_true",
+    help="Enable the local TCP/JSON command server.",
+)
+parser.add_argument(
+    "--tcp-port",
+    type=int,
+    default=8765,
+    help="Local TCP port used by the TCP/JSON server.",
+)
+parser.add_argument(
+    "--tcp-timeout",
+    type=float,
+    default=300.0,
+    help="Maximum time to wait for a GUI command result, in seconds.",
+)
 args = parser.parse_args()
 
 
@@ -96,11 +119,16 @@ settwin = inits.sett_window(viewport,inV.init_left_indent,
                              inV.init_bottom_indent,
                              inV.init_top_indent,
                              inV.init_group_spacer)
+# try:
 THEME = settwin.OPTIONS['theme_choose']
 build_themes(THEME)
+menu.set_tcp_json_status(False)
 updt.run_updater()
-print('updt.updater_state =', updt.updater_state)
+print('Update check started in background')
     
+# except:
+#     basf.some_fail()
+
 inV.METHODS = basf.search_for_methods()
 
 for method in inV.METHODS:
@@ -108,5 +136,41 @@ for method in inV.METHODS:
     path =os.path.join(method,basf.path_to_method_anal_menu_item(method))
     execfile(path)
 
-dpg.start_dearpygui()
+tcp_server = None
+if args.tcp_server:
+    def get_gui_state(arguments):
+        return {
+            "mounted_method": inV.mounted_method,
+            "available_methods": inV.METHODS,
+            "viewport": {
+                "width": dpg.get_viewport_width(),
+                "height": dpg.get_viewport_height(),
+            },
+        }
+
+    command_registry = create_default_registry(get_gui_state)
+    register_gui_commands(command_registry, dpg, lambda: globals())
+    command_dispatcher = GuiCommandDispatcher(command_registry)
+    tcp_server = TCPJSONCommandServer(
+        command_dispatcher,
+        port=args.tcp_port,
+        timeout=args.tcp_timeout,
+    )
+    tcp_server.start()
+    menu.set_tcp_json_status(True)
+    print(
+        "FcsIT TCP/JSON server listening on "
+        f"127.0.0.1:{tcp_server.port}"
+    )
+
+try:
+    while dpg.is_dearpygui_running():
+        updt.poll_updater()
+        if tcp_server is not None:
+            command_dispatcher.process_pending()
+        dpg.render_dearpygui_frame()
+finally:
+    if tcp_server is not None:
+        tcp_server.stop()
+        menu.set_tcp_json_status(False)
 dpg.destroy_context()

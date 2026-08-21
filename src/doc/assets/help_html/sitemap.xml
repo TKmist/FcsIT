@@ -1,34 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<?xml-stylesheet type="text/xsl" href="http://localhost:3001/sitemap_style.xsl" ?>
+<?xml-stylesheet type="text/xsl" href="http://localhost:3000/sitemap_style.xsl" ?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>http://localhost:3001</loc>
+    <loc>http://localhost:3000</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/release-notes</loc>
+    <loc>http://localhost:3000/release-notes</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/installation</loc>
+    <loc>http://localhost:3000/installation</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/usage</loc>
+    <loc>http://localhost:3000/usage</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/import-ptu</loc>
+    <loc>http://localhost:3000/import-ptu</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/time-binned</loc>
+    <loc>http://localhost:3000/time-binned</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/fcs-fitting</loc>
+    <loc>http://localhost:3000/fcs-fitting</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/fitting-models</loc>
+    <loc>http://localhost:3000/scripted-control</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/dev-section</loc>
+    <loc>http://localhost:3000/fitting-models</loc>
   </url>
   <url>
-    <loc>http://localhost:3001/credits</loc>
+    <loc>http://localhost:3000/dev-section</loc>
+  </url>
+  <url>
+    <loc>http://localhost:3000/credits</loc>
   </url>
 </urlset>

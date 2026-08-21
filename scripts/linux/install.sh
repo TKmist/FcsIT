@@ -85,52 +85,7 @@ while true; do
 done
 
 # ----------------------------
-# 2) Prompt for readPTU_FLIM.py download (MIT)
-# ----------------------------
-
-# If user declines, PTU_Corr module is removed before pip install . so it won't be installed.
-PTU_CORR_DIR="src/Methods/PTU_Corr"
-THIRD_PARTY_DIR="src/Methods/PTU_Corr/include/Third_party"
-
-echo
-# echo "------------------------------------------------------------"
-# echo "Optional component: PTU_Corr / readPTU_FLIM.py"
-# echo "------------------------------------------------------------"
-echo
-echo "The PTU_Corr module requires a third-party component:"
-echo "  - readPTU_FLIM.py (MIT License), downloaded from an external repository during installation."
-echo
-echo "If you accept, the installer will download readPTU_FLIM.py and store it together with"
-echo "the MIT license text in:"
-echo "  $THIRD_PARTY_DIR"
-echo
-echo "If you deny, the PTU_Corr module directory will be removed and PTU_Corr functionality will NOT be installed."
-echo
-
-
-# Default: do NOT download third-party component unless user explicitly agrees
-export FCSIT_DOWNLOAD_READPTU_FLIM="0"
-
-prompt_choice "Download and install readPTU_FLIM.py now? [y/n]:" "yn"
-if [ "$REPLY" = "y" ]; then
-    export FCSIT_DOWNLOAD_READPTU_FLIM="1"
-    echo "Accepted. readPTU_FLIM.py will be downloaded during installation."
-else
-    export FCSIT_DOWNLOAD_READPTU_FLIM="0"
-    echo "Denied. Proceeding with partial installation (without PTU_Corr)."
-    if [ -d "$PTU_CORR_DIR" ]; then
-        echo "Removing module directory: $PTU_CORR_DIR"
-        rm -rf "$PTU_CORR_DIR" || exit 1
-    fi
-fi
-
-
-
-
-
-
-# ----------------------------
-# 3) DejaVu fonts notice
+# 2) DejaVu fonts notice
 # ----------------------------
 
 echo
@@ -241,11 +196,25 @@ gtk-update-icon-cache "$HOME/.local/share/icons"
 echo "Creating run_FcsIT script..."
 cat <<EOL > run_FcsIT
 #!/bin/bash
-# Activate the virtual environment and run the main script
+# Copyright (C) 2026 TKmist (https://github.com/TKmist)
+#
+# This file is part of the FcsIT repository.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program. If not, see <https://www.gnu.org/licenses/>.
+# Run FcsIT with the local TCP/JSON command server enabled.
 
 source "$PWD/$VENV_DIR/bin/activate"
-cd FcsIT
-python "$PWD/FcsIT/FcsIT.py" #--timing  ## uncomment the argument to analyse functions' timing
+cd "$PWD/FcsIT"
+python "$PWD/FcsIT/FcsIT.py" --tcp-server "\$@"
 deactivate
 EOL
 
@@ -257,6 +226,63 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 echo "run_FcsIT script created and made executable."
+
+# Install the CLI client distributed beside install.sh.
+INSTALLER_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+FCSIT_CALL_SOURCE="$INSTALLER_DIRECTORY/fcsit_call"
+FCSIT_COMPLETION_SOURCE="$INSTALLER_DIRECTORY/fcsit_call_completion.bash"
+if [ ! -f "$FCSIT_CALL_SOURCE" ]; then
+    echo "FcsIT CLI client not found: $FCSIT_CALL_SOURCE"
+    deactivate
+    exit 1
+fi
+if [ ! -f "$FCSIT_COMPLETION_SOURCE" ]; then
+    echo "FcsIT Bash completion not found: $FCSIT_COMPLETION_SOURCE"
+    deactivate
+    exit 1
+fi
+if [ "$FCSIT_CALL_SOURCE" != "$PWD/fcsit_call" ]; then
+    cp "$FCSIT_CALL_SOURCE" "$PWD/fcsit_call"
+fi
+if [ "$FCSIT_COMPLETION_SOURCE" != "$PWD/fcsit_call_completion.bash" ]; then
+    cp "$FCSIT_COMPLETION_SOURCE" "$PWD/fcsit_call_completion.bash"
+fi
+chmod +x "$PWD/fcsit_call"
+if [ $? -ne 0 ]; then
+    echo "Failed to install the fcsit_call CLI client. Exiting."
+    deactivate
+    exit 1
+fi
+echo "fcsit_call installed at $PWD/fcsit_call."
+
+# Expose the client through the standard per-user executable directory.
+FCSIT_USER_BIN="${XDG_BIN_HOME:-$HOME/.local/bin}"
+mkdir -p "$FCSIT_USER_BIN"
+ln -sfn "$PWD/fcsit_call" "$FCSIT_USER_BIN/fcsit_call"
+if [ $? -ne 0 ]; then
+    echo "Failed to link fcsit_call in $FCSIT_USER_BIN. Exiting."
+    deactivate
+    exit 1
+fi
+if [[ ":$PATH:" != *":$FCSIT_USER_BIN:"* ]]; then
+    echo "WARNING: $FCSIT_USER_BIN is not present in PATH."
+    echo "Add 'export PATH=\"$FCSIT_USER_BIN:\$PATH\"' to your shell profile."
+fi
+
+# Install command completion in the standard per-user Bash completion path.
+FCSIT_COMPLETION_DIRECTORY="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+mkdir -p "$FCSIT_COMPLETION_DIRECTORY"
+cp "$FCSIT_COMPLETION_SOURCE" "$FCSIT_COMPLETION_DIRECTORY/fcsit_call"
+if [ $? -ne 0 ]; then
+    echo "Failed to install Bash completion for fcsit_call. Exiting."
+    deactivate
+    exit 1
+fi
+echo "fcsit_call completion installed at $FCSIT_COMPLETION_DIRECTORY/fcsit_call."
+if [ ! -r /usr/share/bash-completion/bash_completion ] && [ ! -r /etc/bash_completion ]; then
+    echo "WARNING: bash-completion was not detected."
+    echo "Install the bash-completion package or source $PWD/fcsit_call_completion.bash manually."
+fi
 
 # Create a .desktop entry in KDE/GNOME menu
 DESKTOP_ENTRY_DIR="$HOME/.local/share/applications"
@@ -300,7 +326,7 @@ fi
 # Step 2: Move all files in the main directory (except install.sh and setup.py) to the FcsIT directory
 echo "Moving files to FcsIT directory..."
 for file in *; do
-    if [[ "$file" != "install.sh" && "$file" != "setup.py" && "$file" != "run_FcsIT" && "$file" != "FcsIT" && "$file" != "v_FcsIT_env" && "$file" != "python_embedded" ]]; then
+    if [[ "$file" != "install.sh" && "$file" != "setup.py" && "$file" != "run_FcsIT" && "$file" != "fcsit_call" && "$file" != "fcsit_call_completion.bash" && "$file" != "FcsIT" && "$file" != "v_FcsIT_env" && "$file" != "python_embedded" ]]; then
         mv "$file" FcsIT/
         if [ $? -ne 0 ]; then
             echo "Failed to move file $file to FcsIT directory. Exiting."
@@ -320,3 +346,8 @@ fi
 # Confirm completion
 echo "All files successfully organized and cleaned up."
 echo "Installation and reorganization completed successfully!"
+echo "The FcsIT TCP/JSON server is enabled in: $PWD/run_FcsIT"
+echo "The FcsIT TCP/JSON CLI client is installed at: $PWD/fcsit_call"
+echo "The fcsit_call command is linked at: $FCSIT_USER_BIN/fcsit_call"
+echo "Bash completion is installed for the fcsit_call command."
+echo "The server listens on localhost port 8765 by default."

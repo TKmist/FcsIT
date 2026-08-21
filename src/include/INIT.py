@@ -15,7 +15,9 @@ for more details.
 You should have received a copy of the GNU General Public License
 along with this file. If not, see <https://www.gnu.org/licenses/>.
 """
+# from __future__ import annotations
 import os
+import sys
 import numpy as np
 from numpy import log10
 import dearpygui.dearpygui as dpg
@@ -44,6 +46,13 @@ import zipfile
 
 import requests
 
+from include.update_manifest import (
+    UpdateManifestError,
+    UpdateManifestReader,
+    UpdateMigrationError,
+    UpdateMigrationExecutor,
+)
+
 
 class FcsITUpdater:
     _VERSION_RE = re.compile(r"^\s*[vV]?(\d+)\.(\d+)\.(\d+)(?:rc(\d+)|([A-Za-z]))?\s*$")
@@ -63,6 +72,15 @@ class FcsITUpdater:
         self.repo = "FcsIT"
         self.branch = "main"
         self.path = "VERSION"
+        self._update_result = None
+        self._update_result_lock = threading.Lock()
+        self._update_result_applied = False
+        self.install_root = Path(__file__).resolve().parents[1]
+        self._migration_initialized = False
+        self._migration_executor = None
+        self._migration_result = None
+        self._migration_result_lock = threading.Lock()
+        self._migration_result_applied = False
 
     def _parse_version(self, ver: str):
         
@@ -197,6 +215,291 @@ class FcsITUpdater:
         except Exception:
             dpg.show_item("No_data_files")
 
+    def _initialize_dependency_migration(self):
+        """Load the bundled manifest and show a consent dialog when required."""
+        if self._migration_initialized:
+            return
+        self._migration_initialized = True
+        manifest_path = (
+            self.install_root / "res" / "JSON_files" / "Update_manifest.json"
+        )
+        if not manifest_path.is_file():
+            return
+        try:
+            manifest = UpdateManifestReader.load(manifest_path)
+            executor = UpdateMigrationExecutor(manifest, self.install_root)
+        except UpdateManifestError as exc:
+            print(f"[Updater] Invalid dependency migration manifest: {exc}")
+            return
+        if not executor.is_required():
+            return
+        self._migration_executor = executor
+        self._show_dependency_migration_window()
+
+    def initialize_dependency_migration(self):
+        """Initialize a pending migration after the GUI has been constructed."""
+        self._initialize_dependency_migration()
+        if self._migration_executor is not None:
+            print(
+                "[Updater] Dependency migration requires user confirmation: "
+                f"{self._migration_executor.manifest.migration_id}"
+            )
+
+    def _show_dependency_migration_window(self):
+        """Ask the user before changing the active Python environment."""
+        if dpg.does_item_exist("dependency_migration_window"):
+            dpg.configure_item("dependency_migration_window", show=True)
+            return
+        manifest = self._migration_executor.manifest
+        missing = self._migration_executor.missing_packages()
+        copies = self._migration_executor.pending_file_copies()
+        removals = self._migration_executor.removable_files()
+        details = [manifest.message]
+        if missing:
+            details.append(
+                "Packages to install: "
+                + ", ".join(item.requirement for item in missing)
+            )
+        if removals:
+            details.append(
+                "Obsolete files to remove after successful installation: "
+                + ", ".join(
+                    str(path.relative_to(self.install_root)) for path in removals
+                )
+            )
+        if copies:
+            details.append(
+                "Launchers and CLI tools to update: "
+                + ", ".join(str(item.target) for item in copies)
+            )
+        details.append(
+            "FcsIT will use the current application environment. No package "
+            "will be installed without your consent."
+        )
+        viewport_width = dpg.get_viewport_client_width()
+        viewport_height = dpg.get_viewport_client_height()
+        with dpg.window(
+            label="Additional dependency required",
+            tag="dependency_migration_window",
+            modal=True,
+            show=True,
+            autosize=True,
+            no_move=True,
+            pos=(
+                max(20, (viewport_width - 600) // 2),
+                max(20, (viewport_height - 300) // 2),
+            ),
+        ):
+            dpg.add_text(
+                "\n\n".join(details),
+                tag="dependency_migration_text",
+                wrap=560,
+            )
+            with dpg.group(
+                tag="dependency_migration_buttons", horizontal=True
+            ):
+                dpg.add_button(
+                    label="Install and continue",
+                    tag="dependency_migration_install",
+                    callback=self._start_dependency_migration,
+                )
+                dpg.add_button(
+                    label="Later",
+                    tag="dependency_migration_later",
+                    callback=self._close_dependency_migration_window,
+                )
+                dpg.add_button(
+                    label="Full installer",
+                    tag="dependency_migration_full_installer",
+                    callback=self._open_full_installer,
+                )
+            with dpg.tooltip(parent="dependency_migration_install"):
+                dpg.add_text(
+                    "Install and verify the required packages in the Python "
+                    "environment currently running FcsIT. Obsolete files are "
+                    "removed only after verification succeeds.",
+                    wrap=420,
+                )
+            with dpg.tooltip(parent="dependency_migration_later"):
+                dpg.add_text(
+                    "Close this dialog without changing the environment. "
+                    "PTU/PT3 loading remains unavailable until the migration "
+                    "is completed.",
+                    wrap=420,
+                )
+            with dpg.tooltip(parent="dependency_migration_full_installer"):
+                dpg.add_text(
+                    "Show instructions and ask for confirmation before "
+                    "opening the latest FcsIT release page.",
+                    wrap=420,
+                )
+        dpg.configure_item("dependency_migration_window", show=True)
+        dpg.focus_item("dependency_migration_window")
+
+    def _close_dependency_migration_window(self, *args):
+        """Hide the dependency prompt without modifying the environment."""
+        if dpg.does_item_exist("dependency_migration_window"):
+            dpg.configure_item("dependency_migration_window", show=False)
+
+    def _open_full_installer(self, *args):
+        """Ask for confirmation before opening the latest release page."""
+        migration_tag = "dependency_migration_window"
+        if dpg.does_item_exist(migration_tag):
+            dpg.delete_item(migration_tag)
+        dpg.set_frame_callback(
+            dpg.get_frame_count() + 1,
+            self._show_full_installer_confirmation,
+        )
+
+    def _show_full_installer_confirmation(self, *args):
+        """Create the confirmation after the previous modal is removed."""
+        tag = "full_installer_confirmation_window"
+        if dpg.does_item_exist(tag):
+            dpg.configure_item(tag, show=True)
+            dpg.focus_item(tag)
+            return
+        viewport_width = dpg.get_viewport_client_width()
+        viewport_height = dpg.get_viewport_client_height()
+        with dpg.window(
+            label="Full installer",
+            tag=tag,
+            modal=True,
+            show=True,
+            autosize=True,
+            no_move=True,
+            pos=(
+                max(20, (viewport_width - 560) // 2),
+                max(20, (viewport_height - 220) // 2),
+            ),
+        ):
+            dpg.add_text(
+                "The latest FcsIT release page on GitHub will be opened in "
+                "your default web browser.\n\nDownload the current version "
+                "and install it manually. No files will be downloaded or "
+                "installed automatically.",
+                wrap=520,
+            )
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    label="Continue to GitHub",
+                    callback=self._confirm_full_installer,
+                )
+                dpg.add_button(
+                    label="Cancel",
+                    callback=self._close_full_installer_confirmation,
+                )
+        dpg.focus_item(tag)
+
+    def _confirm_full_installer(self, *args):
+        """Open the latest release page after explicit user confirmation."""
+        self._close_full_installer_confirmation(restore_migration=False)
+        webbrowser.open(f"https://github.com/{self.owner}/{self.repo}/releases/latest")
+
+    def _close_full_installer_confirmation(
+        self, *args, restore_migration=True
+    ):
+        """Close confirmation and optionally restore the migration choice."""
+        tag = "full_installer_confirmation_window"
+        if dpg.does_item_exist(tag):
+            dpg.delete_item(tag)
+        if restore_migration:
+            dpg.set_frame_callback(
+                dpg.get_frame_count() + 1,
+                self._restore_dependency_migration_window,
+            )
+
+    def _restore_dependency_migration_window(self, *args):
+        """Recreate the migration choice after confirmation is cancelled."""
+        self._show_dependency_migration_window()
+        dpg.focus_item("dependency_migration_window")
+
+    def _start_dependency_migration(self, *args):
+        """Start an approved migration outside the GUI rendering thread."""
+        if self._migration_executor is None:
+            return
+        for tag in (
+            "dependency_migration_install",
+            "dependency_migration_later",
+            "dependency_migration_full_installer",
+        ):
+            if dpg.does_item_exist(tag):
+                dpg.configure_item(tag, enabled=False)
+        dpg.set_value(
+            "dependency_migration_text",
+            "Installing and verifying required packages. Please wait...",
+        )
+
+        def execute_in_background():
+            try:
+                result = (True, self._migration_executor.execute())
+            except (UpdateManifestError, UpdateMigrationError, OSError) as exc:
+                result = (False, str(exc))
+            with self._migration_result_lock:
+                self._migration_result = result
+
+        threading.Thread(
+            target=execute_in_background,
+            name="FcsIT-dependency-migration",
+            daemon=True,
+        ).start()
+
+    def _poll_dependency_migration(self):
+        """Apply background migration results from the Dear PyGui thread."""
+        if not self._migration_initialized:
+            if dpg.get_frame_count() < 2:
+                return
+            self.initialize_dependency_migration()
+        with self._migration_result_lock:
+            if self._migration_result is None or self._migration_result_applied:
+                return
+            success, result = self._migration_result
+            self._migration_result_applied = True
+
+        if not dpg.does_item_exist("dependency_migration_window"):
+            return
+        if success:
+            installed = result["installed_packages"]
+            copied = result["copied_files"]
+            removed = result["removed_files"]
+            summary = ["Dependency migration completed successfully."]
+            if installed:
+                summary.append("Installed: " + ", ".join(installed))
+            if copied:
+                summary.append("Updated launchers/CLI: " + ", ".join(copied))
+            if removed:
+                summary.append("Removed: " + ", ".join(removed))
+            if result["requires_restart"]:
+                summary.append("Close and restart FcsIT to activate the changes.")
+            dpg.set_value("dependency_migration_text", "\n\n".join(summary))
+            if dpg.does_item_exist("dependency_migration_buttons"):
+                dpg.delete_item("dependency_migration_buttons", children_only=True)
+            dpg.add_button(
+                label="Close FcsIT",
+                parent="dependency_migration_buttons",
+                callback=lambda *args: dpg.stop_dearpygui(),
+            )
+            dpg.add_button(
+                label="Later",
+                parent="dependency_migration_buttons",
+                callback=self._close_dependency_migration_window,
+            )
+        else:
+            dpg.set_value(
+                "dependency_migration_text",
+                "Dependency installation failed. No obsolete files were "
+                f"removed.\n\n{result}",
+            )
+            for tag in (
+                "dependency_migration_install",
+                "dependency_migration_later",
+                "dependency_migration_full_installer",
+            ):
+                if dpg.does_item_exist(tag):
+                    dpg.configure_item(tag, enabled=True)
+            self._migration_result_applied = False
+            with self._migration_result_lock:
+                self._migration_result = None
+
     def proceed_window_close(self):
         dpg.configure_item("proceed_to_update_window", show=False)
         dpg.delete_item("proceed_to_update_window_text")
@@ -206,6 +509,7 @@ class FcsITUpdater:
         dpg.delete_item("proceed_to_update_window")
 
     def proceed_window_OK(self):
+        # print("proceed_window_OK")
         window_size = dpg.get_item_rect_size("proceed_to_update_window")
 
         dpg.delete_item("proceed_to_update_window_ok_butt")
@@ -234,6 +538,7 @@ class FcsITUpdater:
                 1 * dpg.get_item_height("proceed_to_update_window")
                 + dpg.get_global_font_scale() * 50,
             ),
+            # callback=self.proceed_window_close
             parent="proceed_to_update_window",
             width=window_size[0],
         )
@@ -281,11 +586,13 @@ class FcsITUpdater:
             
             source = os.path.join(current_dir, f)
             target = os.path.join(bckp_dir, f)
+            # print(source)
+            # print(target)
             shutil.copy2(source, target)
 
         dpg.set_item_label("progress_button", "Backing up software directories")
-        source = os.path.join(current_dir, "..")
-        target = os.path.join(bckp_dir)
+        source = current_dir
+        target = os.path.join(bckp_dir, "FcsIT")
         shutil.copytree(
             source,
             target,
@@ -325,12 +632,18 @@ class FcsITUpdater:
             dpg.set_item_label("progress_button", "Updating meta files")
             source = os.path.join(updt_dir, f)
             target = os.path.join(current_dir, f)
+            # print(source)
+            # print(target)
             shutil.copy(source, target)
 
+        # FoldersToBackup = ["REWRITE_ROI", "smICA"]
+        # for d in FoldersToBackup:
         print("[Updater] Updating software directories")
         dpg.set_item_label("progress_button", "Updating software directories")
         source = os.path.join(updt_dir, "src")
         target = os.path.join(current_dir)
+        # print(source)
+        # print(target)
         shutil.copytree(
             source,
             target,
@@ -340,7 +653,43 @@ class FcsITUpdater:
             ),
         )
 
+        self._install_platform_control_files(updt_dir, current_dir)
+
         dpg.set_item_label("progress_button", "Removing temporary files")
+        # shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def _install_platform_control_files(self, update_root, application_root):
+        """Install the launcher and TCP/JSON CLI files for the host platform."""
+        update_root = Path(update_root)
+        install_root = Path(application_root).resolve().parent
+        if sys.platform.startswith("win"):
+            platform_root = update_root / "scripts" / "windows"
+            mappings = {
+                "FcsIT.bat": "FcsIT.bat",
+                "fcsit_call.bat": "fcsit_call.bat",
+            }
+        else:
+            platform_root = update_root / "scripts" / "linux"
+            mappings = {
+                "run_FcsIT": "run_FcsIT",
+                "fcsit_call": "fcsit_call",
+                "fcsit_call_completion.bash": "fcsit_call_completion.bash",
+            }
+
+        missing = [name for name in mappings if not (platform_root / name).is_file()]
+        if missing:
+            raise FileNotFoundError(
+                "Update package is missing platform control files: "
+                + ", ".join(missing)
+            )
+
+        dpg.set_item_label("progress_button", "Updating launcher and CLI tools")
+        for source_name, target_name in mappings.items():
+            target = install_root / target_name
+            shutil.copy2(platform_root / source_name, target)
+            if not sys.platform.startswith("win"):
+                target.chmod(target.stat().st_mode | 0o111)
+        print(f"[Updater] Installed platform control files in {install_root}")
 
     def download_update(
         self,
@@ -386,13 +735,37 @@ class FcsITUpdater:
             return None
 
     def run_updater(self):
-        is_newer, remote = self.check_remote_version(
-            owner=self.owner,
-            repo=self.repo,
-            branch=self.branch,
-            path=self.path,
-        )
-        theme_tag = dpg.get_item_theme("menu_about_dropout")
+        """Start a non-blocking update check.
+
+        Network access must never delay GUI or TCP-server startup.  The
+        worker only performs HTTP I/O; Dear PyGui updates remain on the GUI
+        thread and are applied by ``poll_updater``.
+        """
+        def check_in_background():
+            result = self.check_remote_version(
+                owner=self.owner,
+                repo=self.repo,
+                branch=self.branch,
+                path=self.path,
+                timeout=2.0,
+            )
+            with self._update_result_lock:
+                self._update_result = result
+
+        threading.Thread(
+            target=check_in_background,
+            name="FcsIT-update-check",
+            daemon=True,
+        ).start()
+
+    def poll_updater(self):
+        """Apply a completed update check from the Dear PyGui thread."""
+        self._poll_dependency_migration()
+        with self._update_result_lock:
+            if self._update_result is None or self._update_result_applied:
+                return
+            is_newer, remote = self._update_result
+            self._update_result_applied = True
 
         if is_newer:
             self.updater_state = True
@@ -699,6 +1072,8 @@ class _init_Menu:
             self.callback_full_screen('fullscreenclick',app_data)
         
     def callback_help(self,sender,app_data):
+        # url = os.path.join(self.docs_dir,'index.html')
+        # webbrowser.open(url,new=2)
         self.show_docs_callback()
         
     def callback_license(self,sender,app_data):
@@ -790,6 +1165,7 @@ class _init_Menu:
             with dpg.menu(label="Settings",tag='menu_settings_dropout'):
                 dpg.add_menu_item(label="Full Screen (F11)",tag='fullscreenclick',callback=self.callback_full_screen)
                 dpg.add_menu_item(label="Settings",
+                                  # callback=lambda: dpg.show_item("Settings_window"),
                                   parent = 'menu_settings_dropout',
                                   before='fullscreenclick',
                                   tag='sett_menu_item')
@@ -797,9 +1173,22 @@ class _init_Menu:
                 dpg.add_menu_item(label="Help",tag='helpclick',callback=self.callback_help)
                 dpg.add_menu_item(label='License',callback = self.callback_license,tag='Licenseclick')
                 dpg.add_menu_item(label='Version: '+self.VERSION,tag='menu_Version_dropout_item',enabled=False)
+                with dpg.group(horizontal=True, tag="menu_TCP_JSON_status_row"):
+                    dpg.add_text("TCP/JSON:")
+                    dpg.add_text("not active", tag="menu_TCP_JSON_status")
+
+    def set_tcp_json_status(self, active):
+        """Update the disabled About-menu entry with the server state."""
+        state = "active" if active else "not active"
+        if dpg.does_item_exist("menu_TCP_JSON_status"):
+            dpg.set_value("menu_TCP_JSON_status", state)
+            dpg.bind_item_theme(
+                "menu_TCP_JSON_status",
+                "menu_tcp_active" if active else "menu_tcp_inactive",
+            )
 
 
-                
+
                 
                 
 class _common_VARIABLES:
@@ -995,7 +1384,9 @@ class sett_window:
                            height = Settings_window['height'],
                            pos = Settings_window['pos']
                           )
+        # print(dpg.get_item_width('Settings_window'),dpg.get_item_height('Settings_window'))
         button_pos = (left_indent,dpg.get_item_height('Settings_window')-24-bottom_indent)
+        # print(button_pos)
         dpg.configure_item('default_theme_group',
                            horizontal_spacing = group_spacer
                           )
@@ -1037,7 +1428,6 @@ class sett_window:
         dpg.hide_item('Settings_window')
     def callback_save_as_def(self,sender,app_data):
         items = ['Sett_export_each',
-                 'Sett_export_to_excel',
                  'Sett_export_plot_as_png',
                  'Sett_export_to_csv',
                  'Sett_export_plot_as_csv',
@@ -1046,7 +1436,6 @@ class sett_window:
                  'Sett_export_stats',
                  'Sett_export_plot_loglog',
                  'Sett_export_stats_to_csv',
-                 'Sett_export_stats_to_xlsx',
                  'Sett_export_stats_to_pickle',
                  'Sett_preserve_time',
                  'Sett_preserve_units',
@@ -1067,7 +1456,7 @@ class sett_window:
         dpg.configure_item(sender,enabled=False)   
         self.hide_set_win()
     def callback_settings_data_stats(self,sender,app_data):   
-        items = ['Sett_export_stats_to_csv','Sett_export_stats_to_xlsx',]
+        items = ['Sett_export_stats_to_csv']
         dpg.configure_item('Setts_save_defaults',enabled=True)
         if app_data:
             for item in items:
@@ -1077,7 +1466,7 @@ class sett_window:
 
                 dpg.configure_item(item, enabled = False)
     def callback_settings_data_export_each(self,sender,app_data): 
-        items = ['Sett_export_to_excel','Sett_export_to_csv','Sett_export_to_pickle']
+        items = ['Sett_export_to_csv','Sett_export_to_pickle']
         dpg.configure_item('Setts_save_defaults',enabled=True)
         if app_data:
             for item in items:
@@ -1089,7 +1478,10 @@ class sett_window:
     
 
     def UnMountSettingsWindow(self):
+        # print('Unmounting')
+        # print(self.settings_items)
         for item in self.settings_items:
+            # print(item)
             dpg.delete_item(item)
     def MountSettingsWindow(self):
         with dpg.window(label='Settings',
@@ -1170,15 +1562,7 @@ class sett_window:
                     
                     
                     with dpg.table_cell(tag = 'Setts_c1_r2_cell'):
-                        dpg.add_checkbox(label='Export as .xlsx',
-                                     tag='Sett_export_to_excel',
-                                     default_value=False,
-                                     enabled = True,
-                                     callback=lambda: dpg.configure_item('Setts_save_defaults',enabled=True)
-                                    )
-                        with dpg.tooltip('Sett_export_to_excel',tag='Setts_c1_r2_cell_tooltip'):
-                            dpg.add_text('Each data will be quick saved to ".xlsx" file.',
-                                         tag='Setts_c1_r2_cell_tooltip_text')
+                        pass
                             
                     with dpg.table_cell(tag = 'Setts_c2_r2_cell'):
                         dpg.add_checkbox(label='Export plot as .csv',
@@ -1291,16 +1675,7 @@ class sett_window:
                     
                     
                     with dpg.table_cell(tag='Setts_c1_r7_cell'):
-                        dpg.add_checkbox(label="Statistics to .xlsx",
-                                     tag='Sett_export_stats_to_xlsx',
-                                     default_value=True,
-                                     enabled = True,
-                                     callback=lambda: dpg.configure_item('Setts_save_defaults',enabled=True)
-                                    )
-                       
-                        with dpg.tooltip('Sett_export_stats_to_xlsx',tag='Setts_c1_r7_cell_tooltip'):
-                            dpg.add_text('Export stats to the ".xlsx" file.',
-                                        tag='Setts_c1_r7_cell_tooltip_text')
+                        pass
                             
                     with dpg.table_cell(tag='Setts_c2_r7_cell'):
                         pass
@@ -1423,6 +1798,7 @@ class sett_window:
                                        width = self.Setts_save_defaults,
                                        callback=self.callback_save_as_def
                                       )
+                # dpg.bind_item_theme('Setts_save_defaults', 'fit_button_theme')
                 
                 dpg.add_button(label='Close',
                                        tag='Setts_cancel',
@@ -1457,7 +1833,7 @@ class sett_window:
                           'Setts_row_1',
                           'Setts_c1_r1_cell', 'Sett_export_each', 'Setts_c1_r1_cell_tooltip', 'Setts_c1_r1_cell_tooltip_text',
                           'Setts_c2_r1_cell', 'Sett_export_plot_as_png', 'Setts_c2_r1_cell_tooltip', 'Setts_c2_r1_cell_tooltip_text',
-                          'Setts_c1_r2_cell', 'Sett_export_to_excel','Setts_c1_r2_cell_tooltip','Setts_c1_r2_cell_tooltip_text',
+                          'Setts_c1_r2_cell',
                           'Setts_c2_r2_cell','Sett_export_plot_as_csv', 'Setts_c2_r2_cell_tooltip','Setts_c2_r2_cell_tooltip_text',
                           'Setts_row_3',
                           'Setts_c1_r3_cell','Sett_export_to_csv','Setts_c1_r3_cell_tooltip','Setts_c1_r3_cell_tooltip_text',
@@ -1472,7 +1848,7 @@ class sett_window:
                           'Setts_c1_r6_cell','Sett_export_stats_to_csv','Setts_c1_r6_cell_tooltip','Setts_c1_r6_cell_tooltip_text',
                           'Setts_c2_r6_cell',
                           'Setts_row_7',
-                          'Setts_c1_r7_cell','Sett_export_stats_to_xlsx','Setts_c1_r7_cell_tooltip','Setts_c1_r7_cell_tooltip_text',
+                          'Setts_c1_r7_cell',
                           'Setts_c2_r7_cell',
                           'Setts_row_8',
                           'Setts_c1_r8_cell','Sett_export_stats_to_pickle''Setts_c1_r8_cell_tooltip','Setts_c1_r8_cell_tooltip_text'
@@ -1498,5 +1874,3 @@ class sett_window:
                           'Setts_buttons_group',
                           'Setts_save_defaults','Setts_cancel'
                           ]
-        
-                

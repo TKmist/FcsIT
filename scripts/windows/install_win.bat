@@ -11,12 +11,6 @@ set "GET_PIP=%PYTHON_DIR%\get-pip.py"
 set "VENV_DIR=v_FcsIT_env"
 set "LAUNCHER_BAT=%~dp0FcsIT.bat"
 
-set "PTU_CORR_DIR=src\Methods\PTU_Corr"
-set "THIRD_PARTY_DIR=src\Methods\PTU_Corr\include\Third_party"
-
-:: Default: do NOT download third-party component unless user explicitly agrees
-set "FCSIT_DOWNLOAD_READPTU_FLIM=0"
-
 :: ------------------------------------------------------------
 :: 1) GPLv3+ license prompt
 :: ------------------------------------------------------------
@@ -63,49 +57,6 @@ exit /b 1
 
 :LICENSE_ACCEPT
 echo Continuing installation.
-
-:: ------------------------------------------------------------
-:: 2) Prompt for readPTU_FLIM.py download (MIT)
-:: ------------------------------------------------------------
-
-echo.
-echo The PTU_Corr module requires a third-party component:
-echo   - readPTU_FLIM.py (MIT License), downloaded from an external repository during installation.
-echo.
-echo If you accept, the installer will download readPTU_FLIM.py and store it together with
-echo the MIT license text in:
-echo   %THIRD_PARTY_DIR%
-echo.
-echo If you deny, the PTU_Corr module directory will be removed and PTU_Corr functionality will NOT be installed.
-echo.
-
-choice /c YN /n /m "Download and install readPTU_FLIM.py now? [y/n]: "
-if errorlevel 2 goto READPTU_NO
-if errorlevel 1 goto READPTU_YES
-goto READPTU_PROMPT
-
-:READPTU_YES
-set "FCSIT_DOWNLOAD_READPTU_FLIM=1"
-echo Accepted. readPTU_FLIM.py will be downloaded during installation.
-goto AFTER_READPTU
-
-:READPTU_NO
-set "FCSIT_DOWNLOAD_READPTU_FLIM=0"
-echo Denied. Proceeding with partial installation (without PTU_Corr).
-if exist "%PTU_CORR_DIR%" (
-    echo Removing module directory: %PTU_CORR_DIR%
-    rmdir /s /q "%PTU_CORR_DIR%"
-    if exist "%PTU_CORR_DIR%" (
-        echo ERROR: Failed to remove %PTU_CORR_DIR%. Exiting.
-        exit /b 1
-    )
-)
-goto AFTER_READPTU
-
-:READPTU_PROMPT
-goto AFTER_READPTU
-
-:AFTER_READPTU
 
 :: ------------------------------------------------------------
 :: 3) DejaVu fonts notice
@@ -181,10 +132,7 @@ echo Installing dependencies...
 "%PIP_EXE%" cache purge
 "%PYTHON_EXE%" -m pip install virtualenv --no-warn-script-location
 
-:: Ensure setup.py sees the flag (child processes inherit environment)
-set "FCSIT_DOWNLOAD_READPTU_FLIM=%FCSIT_DOWNLOAD_READPTU_FLIM%"
-
-"%~dp0%VENV_DIR%\Scripts\pip.exe" install . --no-warn-script-location --disable-pip-version-check --verbose >install.log 2>&1
+"%~dp0%VENV_DIR%\Scripts\pip.exe" install . --no-warn-script-location --disable-pip-version-check --verbose
 if errorlevel 1 (
     echo Failed to install dependencies. Exiting.
     exit /b 1
@@ -193,21 +141,36 @@ if errorlevel 1 (
 :: Create the launcher .bat file
 echo Creating the FcsIT.bat file...
 echo @echo off > "%LAUNCHER_BAT%"
-echo call "%~dp0%VENV_DIR%\Scripts\activate.bat" >> "%LAUNCHER_BAT%"
-echo cd /d "%~dp0FcsIT" >> "%LAUNCHER_BAT%"
-echo. >> "%LAUNCHER_BAT%"
-echo :: Remove 'rem' below to enable functions' timing >> "%LAUNCHER_BAT%"
-echo rem python FcsIT.py --timing >> "%LAUNCHER_BAT%"
-echo. >> "%LAUNCHER_BAT%"
-echo :: If timing enabled above, add 'rem' before the line below to avoid duplicate execution >> "%LAUNCHER_BAT%"
-echo python FcsIT.py >> "%LAUNCHER_BAT%"
-echo. >> "%LAUNCHER_BAT%"
-echo call "%~dp0%VENV_DIR%\Scripts\deactivate.bat" >> "%LAUNCHER_BAT%"
+echo rem Copyright (C) 2026 TKmist (https://github.com/TKmist) >> "%LAUNCHER_BAT%"
+echo rem. >> "%LAUNCHER_BAT%"
+echo rem This file is part of the FcsIT repository. >> "%LAUNCHER_BAT%"
+echo rem. >> "%LAUNCHER_BAT%"
+echo rem This program is free software: you can redistribute it and/or modify >> "%LAUNCHER_BAT%"
+echo rem it under the terms of the GNU General Public License as published by >> "%LAUNCHER_BAT%"
+echo rem the Free Software Foundation, either version 3 of the License, or any later version. >> "%LAUNCHER_BAT%"
+echo rem. >> "%LAUNCHER_BAT%"
+echo rem This program is distributed in the hope that it will be useful, >> "%LAUNCHER_BAT%"
+echo rem but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS >> "%LAUNCHER_BAT%"
+echo rem FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. >> "%LAUNCHER_BAT%"
+echo rem. >> "%LAUNCHER_BAT%"
+echo rem You should have received a copy of the GNU General Public License along with >> "%LAUNCHER_BAT%"
+echo rem this program. If not, see https://www.gnu.org/licenses/. >> "%LAUNCHER_BAT%"
+echo setlocal >> "%LAUNCHER_BAT%"
+echo cd /d "%%~dp0FcsIT" >> "%LAUNCHER_BAT%"
+echo "%%~dp0%VENV_DIR%\Scripts\python.exe" FcsIT.py --tcp-server %%* >> "%LAUNCHER_BAT%"
+echo endlocal >> "%LAUNCHER_BAT%"
 
 if errorlevel 1 (
     echo Failed to create launcher .bat file. Exiting.
     exit /b 1
 )
+
+:: Verify the CLI client distributed beside install_win.bat.
+if not exist "%~dp0fcsit_call.bat" (
+    echo FcsIT CLI client not found: "%~dp0fcsit_call.bat"
+    exit /b 1
+)
+echo FcsIT CLI client verified next to "%LAUNCHER_BAT%".
 
 echo Creating the Windows shortcut on the Desktop...
 set "SHORTCUT_NAME=FcsIT.lnk"
@@ -261,7 +224,7 @@ if errorlevel 1 (
 :: Move files to the FcsIT directory
 echo Moving files to FcsIT directory...
 for %%f in (*) do (
-    if /I not "%%f"=="install_win.bat" if /I not "%%f"=="setup.py" if /I not "%%f"=="FcsIT.bat" if /I not "%%f"=="FcsIT" if /I not "%%f"=="%VENV_DIR%" if /I not "%%f"=="%PYTHON_DIR%" (
+    if /I not "%%f"=="install_win.bat" if /I not "%%f"=="setup.py" if /I not "%%f"=="FcsIT.bat" if /I not "%%f"=="fcsit_call.bat" if /I not "%%f"=="FcsIT" if /I not "%%f"=="%VENV_DIR%" if /I not "%%f"=="%PYTHON_DIR%" (
         move "%%f" FcsIT\
         if errorlevel 1 (
             echo Failed to move file %%f to FcsIT directory. Exiting.
@@ -276,6 +239,9 @@ del setup.py
 del install_win.bat
 
 echo Installation completed successfully!
+echo The FcsIT TCP/JSON server is enabled in "%LAUNCHER_BAT%".
+echo The FcsIT TCP/JSON CLI client is installed next to "%LAUNCHER_BAT%".
+echo The server listens on localhost port 8765 by default.
 pause
 
 endlocal

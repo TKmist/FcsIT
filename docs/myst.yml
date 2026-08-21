@@ -12,6 +12,7 @@ project:
       - file: Import_PTU.ipynb
       - file: Time-binned.ipynb
       - file: FCS_fitting.ipynb
+      - file: Scripted-control.ipynb
     - file: Fitting_models.ipynb
     - file: Dev_section.ipynb
     - file: Credits.ipynb

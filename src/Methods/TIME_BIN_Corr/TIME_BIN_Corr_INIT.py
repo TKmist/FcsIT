@@ -26,15 +26,117 @@ import pickle
 import time
 import socket
 import argparse
+import tempfile
+import gc
+import ctypes
+import multiprocessing as mp
+import threading
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from functools import wraps
 from datetime import datetime
 import inspect
+import re
 import include.INIT as inits
 from include.fcsutils import load_fcs
 logfile=os.path.join('Logs','log.txt')
 bf = inits._basicF(logfile,None)
 lprint = bf.lnprint
 FCS = load_fcs(None,None)
+
+
+def _attach_correlation_metadata(chunks, covariance, covariance_counts,
+                                 lag_times):
+    """Attach uncertainty metadata only to an available chunk table."""
+    if chunks is None:
+        return
+    chunks.attrs['lag_covariance'] = np.asarray(covariance, dtype=float)
+    chunks.attrs['lag_covariance_counts'] = np.asarray(
+        covariance_counts, dtype=np.int64
+    )
+    chunks.attrs['lag_times'] = np.asarray(lag_times, dtype=float)
+
+
+def _time_bin_executor(max_workers, start_methods=None):
+    """Return an executor safe for the current platform and calling thread."""
+    methods = (
+        mp.get_all_start_methods()
+        if start_methods is None else tuple(start_methods)
+    )
+    # Forking a process from the TCP server thread is unsafe for Numba/TBB and
+    # may deadlock the application. Keep the faster process path for direct GUI
+    # calls from the main thread; use threads for TCP calls and on Windows.
+    is_main_thread = threading.current_thread() is threading.main_thread()
+    if 'fork' in methods and is_main_thread:
+        return (
+            ProcessPoolExecutor(
+                max_workers=max_workers,
+                mp_context=mp.get_context('fork'),
+            ),
+            'processes',
+        )
+    return ThreadPoolExecutor(max_workers=max_workers), 'threads'
+
+def natural_sort_key(value):
+    return [int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r'(\d+)', str(value))]
+
+
+def _correlate_time_bin_chunk_process(task):
+    """Calculate the raw ACF and CCF curves for one time-binned data chunk."""
+    (
+        index,
+        chunk_name,
+        start,
+        stop,
+        channel_0_path,
+        channel_1_path,
+        delta_ms,
+        nsub,
+    ) = task
+    started = time.perf_counter()
+    channel_0 = np.load(channel_0_path, mmap_mode='r')[start:stop]
+    result = {
+        'index': index,
+        'chunk_name': chunk_name,
+        'chunk_length_1': delta_ms * max(0, stop - start - 1),
+        'ACF_1': mtau.autocorrelate(
+            channel_0,
+            deltat=delta_ms,
+            m=nsub,
+            normalize=True,
+        ),
+    }
+    if channel_1_path is not None:
+        channel_1 = np.load(channel_1_path, mmap_mode='r')[start:stop]
+        result.update(
+            {
+                'chunk_length_2': delta_ms * max(0, stop - start - 1),
+                'ACF_2': mtau.autocorrelate(
+                    channel_1,
+                    deltat=delta_ms,
+                    m=nsub,
+                    normalize=True,
+                ),
+                'CCF_1': mtau.correlate(
+                    channel_0,
+                    channel_1,
+                    deltat=delta_ms,
+                    m=nsub,
+                    normalize=True,
+                ),
+                'CCF_2': mtau.correlate(
+                    channel_1,
+                    channel_0,
+                    deltat=delta_ms,
+                    m=nsub,
+                    normalize=True,
+                ),
+            }
+        )
+    result['process_id'] = os.getpid()
+    result['duration'] = time.perf_counter() - started
+    return result
+
 class _TB_corr_init:
     def __init__(self,
                  size_ratio,
@@ -229,10 +331,18 @@ class _TB_corr_common:
         dpg.configure_item('ForgetAll_menu_item',callback=self.callback_Forget_all_PTU_data)
     def remove_cor_files(self,file):
         filename = file+('_corr.dat')
+        binary_filename = file+('_corr.corr')
         file_path_A1  =os.path.join(self.output_path,'AutoCorr_ch1',filename)
         file_path_A2  =os.path.join(self.output_path,'AutoCorr_ch2',filename)
         file_path_C1  =os.path.join(self.output_path,'CrossCorr_ch1',filename)
-        file_path_C2  =os.path.join(self.output_path,'CrossCorr_ch1',filename)
+        file_path_C2  =os.path.join(self.output_path,'CrossCorr_ch2',filename)
+        binary_paths = [
+            os.path.join(self.output_path, folder, binary_filename)
+            for folder in (
+                'AutoCorr_ch1', 'AutoCorr_ch2',
+                'CrossCorr_ch1', 'CrossCorr_ch2',
+            )
+        ]
         chnkpath = os.path.join(self.output_path,file+'.chnk')
         try:
             os.remove(file_path_A1)
@@ -254,6 +364,60 @@ class _TB_corr_common:
             os.remove(chnkpath)
         except:
             pass
+        for binary_path in binary_paths:
+            try:
+                os.remove(binary_path)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _mean_count_rate(counts, bin_time):
+        """Return the mean photon count rate in Hz for a binned trace."""
+        counts = np.asarray(counts, dtype=float)
+        if counts.size == 0 or bin_time <= 0:
+            return 0.0
+        return float(np.mean(counts) / bin_time)
+
+    def _export_correlation_pair(
+        self,
+        directory,
+        result,
+        chunk_curves,
+        covariance,
+        covariance_counts,
+        count_rate,
+    ):
+        """Export one correlation curve as human-readable DAT and binary CORR."""
+        if result is None or chunk_curves is None:
+            return None, None
+        stem = self.anal_file + '_corr'
+        dat_path = os.path.join(directory, stem + '.dat')
+        corr_path = os.path.join(directory, stem + '.corr')
+
+        result.to_csv(dat_path, sep='\t', index=False)
+        correlation = result.copy()
+        correlation.columns = (
+            ['X', 'Y', 'Y_err']
+            if len(correlation.columns) == 3 else ['X', 'Y']
+        )
+        chunks = chunk_curves.copy()
+        _attach_correlation_metadata(
+            chunks,
+            covariance,
+            covariance_counts,
+            result['time'].to_numpy(dtype=float),
+        )
+        payload = {
+            'Correlation': correlation,
+            'CNTR': [float(count_rate)],
+            'CorrelatedChunks': chunks,
+            'LagCovariance': np.asarray(covariance, dtype=float),
+            'LagCovarianceCounts': np.asarray(covariance_counts, dtype=np.int64),
+            'LagTimes': result['time'].to_numpy(dtype=float),
+        }
+        with open(corr_path, 'wb') as output:
+            pickle.dump(payload, output)
+        return dat_path, corr_path
         
     #########################################################################           
     #########################################################################           
@@ -492,20 +656,33 @@ class _TB_corr_common:
         self.plot_TT()
         self.callback_crossCorr_check('DUMMY',dpg.get_value('FCS_cross_check'))
         if meta['Meta'] !=None:
+            loaded_correlation = False
+            correlation_meta = meta['Meta'].get('Correlation', {})
             if not self.IsTwoChannel:
-                tmpdf = pd.read_csv(meta['Meta']['Correlation']['A_c0'],sep='\t')
-                self.res_to_exp = {'filename':self.anal_file,
-                               'result_ACF_1':tmpdf}
+                correlation_paths = [correlation_meta.get('A_c0')]
+                if all(path and os.path.isfile(path) for path in correlation_paths):
+                    tmpdf = pd.read_csv(correlation_paths[0],sep='\t')
+                    self.res_to_exp = {'filename':self.anal_file,
+                                   'result_ACF_1':tmpdf}
+                    loaded_correlation = True
             elif self.IsTwoChannel:
-                tmpdf_A1 = pd.read_csv(meta['Meta']['Correlation']['A_c0'],sep='\t')
-                tmpdf_A2 = pd.read_csv(meta['Meta']['Correlation']['A_c1'],sep='\t')
-                tmpdf_C1 = pd.read_csv(meta['Meta']['Correlation']['C_c0'],sep='\t')
-                tmpdf_C2 = pd.read_csv(meta['Meta']['Correlation']['C_c1'],sep='\t')
-                self.res_to_exp = {'filename':self.anal_file,
-                               'result_ACF_1':tmpdf_A1,
-                               'result_ACF_2':tmpdf_A2,
-                               'result_CCF_1':tmpdf_C1,
-                               'result_CCF_2':tmpdf_C2}
+                correlation_paths = [
+                    correlation_meta.get(key)
+                    for key in ('A_c0', 'A_c1', 'C_c0', 'C_c1')
+                ]
+                if all(path and os.path.isfile(path) for path in correlation_paths):
+                    tmpdf_A1 = pd.read_csv(correlation_paths[0],sep='\t')
+                    tmpdf_A2 = pd.read_csv(correlation_paths[1],sep='\t')
+                    tmpdf_C1 = pd.read_csv(correlation_paths[2],sep='\t')
+                    tmpdf_C2 = pd.read_csv(correlation_paths[3],sep='\t')
+                    self.res_to_exp = {'filename':self.anal_file,
+                                   'result_ACF_1':tmpdf_A1,
+                                   'result_ACF_2':tmpdf_A2,
+                                   'result_CCF_1':tmpdf_C1,
+                                   'result_CCF_2':tmpdf_C2}
+                    loaded_correlation = True
+            if not loaded_correlation:
+                self.res_to_exp = {'filename': self.anal_file}
             time_bin = meta['Meta']['meta']['time_bin']
             dpg.set_value('left_panel_drag_time_binning',time_bin)
             Npoints = meta['Meta']['meta']['Npoints']
@@ -519,7 +696,8 @@ class _TB_corr_common:
             dpg.set_value('left_panel_tau_min',tau_min)
             tau_max = meta['Meta']['meta']['tau_max']
             dpg.set_value('left_panel_tau_max',tau_max)
-            self.plot_ACF()
+            if loaded_correlation:
+                self.plot_ACF()
     #########################################################################           
     #########################################################################           
     #########################################################################   
@@ -576,7 +754,12 @@ class _TB_corr_common:
                 dpg.hide_item('Cross_FCS_plot1_shade')
                 dpg.hide_item('Cross_FCS_plot2')
                 dpg.hide_item('Cross_FCS_plot2_shade')
-        if not dummy:
+        required_results = {'result_ACF_1'}
+        if self.IsTwoChannel:
+            required_results.update(
+                {'result_ACF_2', 'result_CCF_1', 'result_CCF_2'}
+            )
+        if not dummy and required_results.issubset(self.res_to_exp):
             self.plot_ACF()
         
     def load_FCS_plots(self):
@@ -889,37 +1072,275 @@ class _TB_corr_common:
             value = np.round(value,abs(exponent-1))
         return value
 
-    def correlate(self,sender,app_data):
+    def _correlate_single_chunk_worker(
+        self,
+        index,
+        chunk_name,
+        bintime,
+        nsub,
+        centers,
+        edges,
+    ):
+        indices = self.chunks[chunk_name]['indices']
+        start, stop = indices
+        column = 'acf_' + chunk_name
+
+        xdata_1 = self.TT_xdata_1[start:stop].astype(float)
+        ydata_1 = self.TT_ydata_1[start:stop].astype(float)
+        acf_1_raw = mtau.autocorrelate(
+            ydata_1,
+            deltat=1e3*bintime,
+            m=nsub,
+            normalize=True,
+        )
+        acf_1_taus = acf_1_raw[1:, 0]
+        acf_1 = pd.DataFrame(
+            FCS.rebin_tau_to_grid(acf_1_taus, centers, edges),
+            columns=['lagtime'],
+        )
+        acf_1[column] = FCS.rebin_chunk_to_grid(
+            acf_1_taus,
+            acf_1_raw[1:, 1],
+            centers,
+            edges,
+        )
+
+        result = {
+            'index': index,
+            'chunk_name': chunk_name,
+            'column': column,
+            'chunk_length_1': 1e3*(xdata_1[-1]-xdata_1[0]),
+            'ACF_1': acf_1,
+        }
+
+        if self.IsTwoChannel:
+            xdata_2 = self.TT_xdata_2[start:stop].astype(float)
+            ydata_2 = self.TT_ydata_2[start:stop].astype(float)
+
+            acf_2_raw = mtau.autocorrelate(
+                ydata_2,
+                deltat=1e3*bintime,
+                m=nsub,
+                normalize=True,
+            )
+            ccf_1_raw = mtau.correlate(
+                ydata_1,
+                ydata_2,
+                deltat=1e3*bintime,
+                m=nsub,
+                normalize=True,
+            )
+            ccf_2_raw = mtau.correlate(
+                ydata_2,
+                ydata_1,
+                deltat=1e3*bintime,
+                m=nsub,
+                normalize=True,
+            )
+
+            for result_name, raw_result in (
+                ('ACF_2', acf_2_raw),
+                ('CCF_1', ccf_1_raw),
+                ('CCF_2', ccf_2_raw),
+            ):
+                taus = raw_result[1:, 0]
+                frame = pd.DataFrame(
+                    FCS.rebin_tau_to_grid(taus, centers, edges),
+                    columns=['lagtime'],
+                )
+                frame[column] = FCS.rebin_chunk_to_grid(
+                    taus,
+                    raw_result[1:, 1],
+                    centers,
+                    edges,
+                )
+                result[result_name] = frame
+
+            result['chunk_length_2'] = 1e3*(xdata_2[-1]-xdata_2[0])
+
+        return result
+
+    def _convert_process_chunk_result(self, raw_result, centers, edges):
+        column = 'acf_' + raw_result['chunk_name']
+        result = {
+            'index': raw_result['index'],
+            'chunk_name': raw_result['chunk_name'],
+            'column': column,
+            'chunk_length_1': raw_result['chunk_length_1'],
+        }
+        for result_name in ('ACF_1', 'ACF_2', 'CCF_1', 'CCF_2'):
+            if result_name not in raw_result:
+                continue
+            raw_curve = raw_result[result_name]
+            taus = raw_curve[1:, 0]
+            frame = pd.DataFrame(
+                FCS.rebin_tau_to_grid(taus, centers, edges),
+                columns=['lagtime'],
+            )
+            frame[column] = FCS.rebin_chunk_to_grid(
+                taus,
+                raw_curve[1:, 1],
+                centers,
+                edges,
+            )
+            result[result_name] = frame
+        if 'chunk_length_2' in raw_result:
+            result['chunk_length_2'] = raw_result['chunk_length_2']
+        result['process_id'] = raw_result['process_id']
+        result['duration'] = raw_result['duration']
+        return result
+
+    def _correlate_chunks_process(
+        self,
+        sender,
+        label0,
+        chnks,
+        bintime,
+        nsub,
+        centers,
+        edges,
+    ):
+        default_workers = min(12, os.cpu_count() or 1)
+        workers = max(
+            1,
+            min(
+                int(
+                    os.environ.get(
+                        'FCSIT_TIME_BIN_WORKERS',
+                        str(default_workers),
+                    )
+                ),
+                len(chnks),
+            ),
+        )
+        started = time.perf_counter()
+        completed = 0
+        with tempfile.TemporaryDirectory(prefix='fcsit_time_bin_') as temporary:
+            channel_0_path = os.path.join(temporary, 'channel_0.npy')
+            channel_1_path = None
+            dpg.set_item_label(sender, f"{label0} | preparing data")
+            np.save(channel_0_path, self.TT_ydata_1, allow_pickle=False)
+            if self.IsTwoChannel:
+                channel_1_path = os.path.join(temporary, 'channel_1.npy')
+                np.save(channel_1_path, self.TT_ydata_2, allow_pickle=False)
+
+            tasks = []
+            for index, chunk_name in enumerate(chnks):
+                start, stop = self.chunks[chunk_name]['indices']
+                tasks.append(
+                    (
+                        index,
+                        chunk_name,
+                        start,
+                        stop,
+                        channel_0_path,
+                        channel_1_path,
+                        1e3*bintime,
+                        nsub,
+                    )
+                )
+            raw_results = [None] * len(tasks)
+            # Windows has no fork start method. There a thread pool avoids
+            # re-importing the DearPyGui entry script through spawn.
+            executor_context, executor_name = _time_bin_executor(workers)
+            thread_variables = (
+                'OMP_NUM_THREADS',
+                'OPENBLAS_NUM_THREADS',
+                'MKL_NUM_THREADS',
+                'NUMEXPR_NUM_THREADS',
+            )
+            previous_thread_limits = {
+                variable: os.environ.get(variable)
+                for variable in thread_variables
+            }
+            try:
+                for variable in thread_variables:
+                    os.environ[variable] = '1'
+                with executor_context as executor:
+                    futures = [
+                        executor.submit(_correlate_time_bin_chunk_process, task)
+                        for task in tasks
+                    ]
+                    for future in as_completed(futures):
+                        raw_result = future.result()
+                        raw_results[raw_result['index']] = raw_result
+                        completed += 1
+                        dpg.set_item_label(
+                            sender,
+                            f"{label0} | chunks {completed}/{len(chnks)}",
+                        )
+            finally:
+                for variable, previous_value in previous_thread_limits.items():
+                    if previous_value is None:
+                        os.environ.pop(variable, None)
+                    else:
+                        os.environ[variable] = previous_value
+
+        results = [
+            self._convert_process_chunk_result(raw_result, centers, edges)
+            for raw_result in raw_results
+        ]
+        duration = time.perf_counter() - started
+        chunk_times = ', '.join(
+            f"{result['index'] + 1}:{result['duration']:.3f}s/pid{result['process_id']}"
+            for result in results
+        )
+        print(
+            f"Time-bin process correlation: {duration:.3f}s total, "
+            f"{workers} {executor_name}; {chunk_times}"
+        )
+        return results
+
+    def _correlate_impl(self,sender,app_data,progress_label=None):
         bintime = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
-        chnks = self.chunks.keys()
+        chnks = list(self.chunks.keys())
         npoints = dpg.get_value('left_panel_drag_subs')
         tau_min = self.round_data(dpg.get_value('left_panel_tau_min'))
         tau_max = dpg.get_value('left_panel_tau_max')
         decades = np.round(log10(tau_max)-log10(tau_min))
         nsub = int(np.floor(1*(npoints/decades)))
         centers, edges = FCS.make_log_grid_ms(tmin_ms=tau_min, tmax_ms=tau_max, points_per_decade=nsub)
+
+        label0 = progress_label or dpg.get_item_label(sender)
+        total_chunks = len(chnks)
+        try:
+            results = self._correlate_chunks_process(
+                sender,
+                label0,
+                chnks,
+                bintime,
+                nsub,
+                centers,
+                edges,
+            )
+        except Exception as error:
+            print(
+                "Time-bin process correlation failed; falling back to "
+                f"sequential mode: {error}"
+            )
+            results = [None] * len(chnks)
+            for index, chnk in enumerate(chnks):
+                result = self._correlate_single_chunk_worker(
+                    index,
+                    chnk,
+                    bintime,
+                    nsub,
+                    centers,
+                    edges,
+                )
+                results[result['index']] = result
+                dpg.set_item_label(
+                    sender,
+                    f"{label0} | chunks {index + 1}/{total_chunks}",
+                )
         
         if not self.IsTwoChannel:
-            acf_columns = []
-            chunk_lengths_sec_1 = []
-            for chnk in chnks:
-                indices = self.chunks[chnk]['indices']
-                xdata = self.TT_xdata_1[indices[0]:indices[1]].astype(float)
-                ydata = self.TT_ydata_1[indices[0]:indices[1]].astype(float)
-                column = 'acf_'+chnk
-                acf_columns.append(column)
-                self.ACF_1 = pd.DataFrame(mtau.autocorrelate(ydata,
-                                                             deltat=1e3*bintime,
-                                                             m=nsub,
-                                                             normalize=True),
-                                                             columns = ['lagtime',
-                                                                        column])
-                chunk_lengths_sec_1.append(1e3*(xdata[-1]-xdata[0]))
-                taus = self.ACF_1.lagtime.values[1:]
-                ACF = self.ACF_1[column].values[1:]
-                self.ACF_1 = pd.DataFrame(FCS.rebin_tau_to_grid(taus,centers, edges),columns = ['lagtime'])
-                self.ACF_1[column] = FCS.rebin_chunk_to_grid(taus,ACF, centers, edges)
-                self.chunks[chnk]['ACF'] = self.ACF_1.copy()
+            acf_columns = [result['column'] for result in results]
+            chunk_lengths_sec_1 = [
+                result['chunk_length_1'] for result in results
+            ]
+            for result in results:
+                self.chunks[result['chunk_name']]['ACF'] = result['ACF_1']
 
             acf_frames = [self.chunks[chnk]['ACF'] for chnk in chnks]
             ACFFr = pd.concat(acf_frames,axis=1)
@@ -929,16 +1350,26 @@ class _TB_corr_common:
             else:
                 ACFFr['time'] = ACFFr['lagtime']
             auto_ch1 = FCS._compute_MEAN_STD(ACFFr, acf_columns,chunk_lengths_sec=chunk_lengths_sec_1)
-            ACFFr['MEAN'],ACFFr['SE']  = auto_ch1
+            ACFFr['MEAN'], ACFFr['SE'] = auto_ch1[:2]
+            self.res_to_exp['lag_covariance_ACF_1'] = auto_ch1[2]
             self.res_to_exp['filename']=self.anal_file
             if dpg.get_value('left_panel_N_chunks') > 1: 
                 self.res_to_exp['result_ACF_1']=ACFFr[['time','MEAN','SE']]
             else:
                 self.res_to_exp['result_ACF_1']=ACFFr[['time','MEAN']]
             Mainmeta = self.files[self.anal_file]['Meta']
-            filename = self.anal_file+('_corr.dat')
-            file_path  =os.path.join(self.output_path,'AutoCorr_ch1',filename)
-            Mainmeta =  {'Correlation':{'A_c0':file_path},
+            chunk_curves = ACFFr[['time'] + acf_columns].copy()
+            count_rate = self._mean_count_rate(self.TT_ydata_1, bintime)
+            file_path, corr_path = self._export_correlation_pair(
+                os.path.join(self.output_path, 'AutoCorr_ch1'),
+                self.res_to_exp['result_ACF_1'],
+                chunk_curves,
+                auto_ch1[2],
+                auto_ch1[3],
+                count_rate,
+            )
+            Mainmeta =  {'Correlation':{'A_c0':file_path,
+                                        'A_c0_corr':corr_path},
                          'meta':{
                              'time_bin':dpg.get_value('left_panel_drag_time_binning'),
                              'Npoints':dpg.get_value('left_panel_drag_subs'),
@@ -952,64 +1383,23 @@ class _TB_corr_common:
             self.files[self.anal_file]['Meta']=Mainmeta
             self.SaveSinglePickle(self.anal_file)
             self.plot_ACF()
-            self.res_to_exp['result_ACF_1'].to_csv(file_path,sep='\t',index=False)
             chnkpath = os.path.join(self.output_path,self.anal_file+'.chnk')
             with open(chnkpath, "wb") as p:
                 pickle.dump(self.chunks, p)
         elif self.IsTwoChannel:
-            chunk_columns = []
-            chunk_lengths_sec_1 = []
-            chunk_lengths_sec_2 = []
-            for chnk in chnks:
-                indices = self.chunks[chnk]['indices']
-                xdata_1 = self.TT_xdata_1[indices[0]:indices[1]].astype(float)
-                xdata_2 = self.TT_xdata_2[indices[0]:indices[1]].astype(float)
-                ydata_1 = self.TT_ydata_1[indices[0]:indices[1]].astype(float)
-                ydata_2 = self.TT_ydata_2[indices[0]:indices[1]].astype(float)
-                column = 'acf_'+chnk
-                chunk_columns.append(column)
-                self.ACF_1 = pd.DataFrame(mtau.autocorrelate(ydata_1,
-                                                             deltat=1e3*bintime,
-                                                             m=nsub,
-                                                             normalize=True),
-                                                             columns = ['lagtime',column])
-                self.ACF_2 = pd.DataFrame(mtau.autocorrelate(ydata_2,
-                                                             deltat=1e3*bintime,
-                                                             m=nsub,
-                                                             normalize=True),
-                                                             columns = ['lagtime',column])
-                self.CCF_1 = pd.DataFrame(mtau.correlate(ydata_1,ydata_2,
-                                                             deltat=1e3*bintime,
-                                                             m=nsub,
-                                                             normalize=True),
-                                                             columns = ['lagtime',column])
-                self.CCF_2 = pd.DataFrame(mtau.correlate(ydata_2,ydata_1,
-                                                             deltat=1e3*bintime,
-                                                             m=nsub,
-                                                             normalize=True),
-                                                             columns = ['lagtime',column])
-                chunk_lengths_sec_1.append(1e3*(xdata_1[-1]-xdata_1[0]))
-                chunk_lengths_sec_2.append(1e3*(xdata_2[-1]-xdata_2[0]))
-                Ataus_1 = self.ACF_1.lagtime.values[1:]
-                Ataus_2 = self.ACF_2.lagtime.values[1:]
-                Ctaus_1 = self.CCF_1.lagtime.values[1:]
-                Ctaus_2 = self.CCF_2.lagtime.values[1:]
-                ACF_1 = self.ACF_1[column].values[1:]
-                ACF_2 = self.ACF_2[column].values[1:]
-                CCF_1 = self.CCF_1[column].values[1:]
-                CCF_2 = self.CCF_2[column].values[1:]
-                self.ACF_1 = pd.DataFrame(FCS.rebin_tau_to_grid(Ataus_1,centers, edges),columns = ['lagtime'])
-                self.ACF_2 = pd.DataFrame(FCS.rebin_tau_to_grid(Ataus_2,centers, edges),columns = ['lagtime'])
-                self.CCF_1 = pd.DataFrame(FCS.rebin_tau_to_grid(Ctaus_1,centers, edges),columns = ['lagtime'])
-                self.CCF_2 = pd.DataFrame(FCS.rebin_tau_to_grid(Ctaus_2,centers, edges),columns = ['lagtime'])
-                self.ACF_1[column] = FCS.rebin_chunk_to_grid(Ataus_1,ACF_1, centers, edges)
-                self.ACF_2[column] = FCS.rebin_chunk_to_grid(Ataus_2,ACF_2, centers, edges)
-                self.CCF_1[column] = FCS.rebin_chunk_to_grid(Ctaus_1,CCF_1, centers, edges)
-                self.CCF_2[column] = FCS.rebin_chunk_to_grid(Ctaus_2,CCF_2, centers, edges)
-                self.chunks[chnk]['ACF_1'] = self.ACF_1.copy()
-                self.chunks[chnk]['ACF_2'] = self.ACF_2.copy()
-                self.chunks[chnk]['CCF_1'] = self.CCF_1.copy()
-                self.chunks[chnk]['CCF_2'] = self.CCF_2.copy()
+            chunk_columns = [result['column'] for result in results]
+            chunk_lengths_sec_1 = [
+                result['chunk_length_1'] for result in results
+            ]
+            chunk_lengths_sec_2 = [
+                result['chunk_length_2'] for result in results
+            ]
+            for result in results:
+                chunk = self.chunks[result['chunk_name']]
+                chunk['ACF_1'] = result['ACF_1']
+                chunk['ACF_2'] = result['ACF_2']
+                chunk['CCF_1'] = result['CCF_1']
+                chunk['CCF_2'] = result['CCF_2']
             acf_1_frames = [self.chunks[chnk]['ACF_1'] for chnk in chnks]
             acf_2_frames = [self.chunks[chnk]['ACF_2'] for chnk in chnks]
             ccf_1_frames = [self.chunks[chnk]['CCF_1'] for chnk in chnks]
@@ -1036,10 +1426,14 @@ class _TB_corr_common:
             auto_ch2 = FCS._compute_MEAN_STD(ACFFr_2, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_2)
             cross_ch1 = FCS._compute_MEAN_STD(CCFFr_1, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_1)
             cross_ch2 = FCS._compute_MEAN_STD(CCFFr_2, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_2)
-            ACFFr_1['MEAN'],ACFFr_1['SE'] = auto_ch1
-            ACFFr_2['MEAN'],ACFFr_2['SE'] = auto_ch2
-            CCFFr_1['MEAN'],CCFFr_1['SE'] = cross_ch1
-            CCFFr_2['MEAN'],CCFFr_2['SE'] = cross_ch2
+            ACFFr_1['MEAN'], ACFFr_1['SE'] = auto_ch1[:2]
+            ACFFr_2['MEAN'], ACFFr_2['SE'] = auto_ch2[:2]
+            CCFFr_1['MEAN'], CCFFr_1['SE'] = cross_ch1[:2]
+            CCFFr_2['MEAN'], CCFFr_2['SE'] = cross_ch2[:2]
+            self.res_to_exp['lag_covariance_ACF_1'] = auto_ch1[2]
+            self.res_to_exp['lag_covariance_ACF_2'] = auto_ch2[2]
+            self.res_to_exp['lag_covariance_CCF_1'] = cross_ch1[2]
+            self.res_to_exp['lag_covariance_CCF_2'] = cross_ch2[2]
             self.res_to_exp['filename']=self.anal_file
             if dpg.get_value('left_panel_N_chunks') > 1: 
                 self.res_to_exp['result_ACF_1']=ACFFr_1[['time','MEAN','SE']]
@@ -1052,15 +1446,48 @@ class _TB_corr_common:
                 self.res_to_exp['result_CCF_1']=CCFFr_1[['time','MEAN']]
                 self.res_to_exp['result_CCF_2']=CCFFr_2[['time','MEAN']]
             Mainmeta = self.files[self.anal_file]['Meta']
-            filename = self.anal_file+('_corr.dat')
-            file_path_A1  =os.path.join(self.output_path,'AutoCorr_ch1',filename)
-            file_path_A2  =os.path.join(self.output_path,'AutoCorr_ch2',filename)
-            file_path_C1  =os.path.join(self.output_path,'CrossCorr_ch1',filename)
-            file_path_C2  =os.path.join(self.output_path,'CrossCorr_ch1',filename)
+            count_rate_1 = self._mean_count_rate(self.TT_ydata_1, bintime)
+            count_rate_2 = self._mean_count_rate(self.TT_ydata_2, bintime)
+            file_path_A1, corr_path_A1 = self._export_correlation_pair(
+                os.path.join(self.output_path, 'AutoCorr_ch1'),
+                self.res_to_exp['result_ACF_1'],
+                ACFFr_1[['time'] + chunk_columns],
+                auto_ch1[2],
+                auto_ch1[3],
+                count_rate_1,
+            )
+            file_path_A2, corr_path_A2 = self._export_correlation_pair(
+                os.path.join(self.output_path, 'AutoCorr_ch2'),
+                self.res_to_exp['result_ACF_2'],
+                ACFFr_2[['time'] + chunk_columns],
+                auto_ch2[2],
+                auto_ch2[3],
+                count_rate_2,
+            )
+            file_path_C1, corr_path_C1 = self._export_correlation_pair(
+                os.path.join(self.output_path, 'CrossCorr_ch1'),
+                self.res_to_exp['result_CCF_1'],
+                CCFFr_1[['time'] + chunk_columns],
+                cross_ch1[2],
+                cross_ch1[3],
+                count_rate_1,
+            )
+            file_path_C2, corr_path_C2 = self._export_correlation_pair(
+                os.path.join(self.output_path, 'CrossCorr_ch2'),
+                self.res_to_exp['result_CCF_2'],
+                CCFFr_2[['time'] + chunk_columns],
+                cross_ch2[2],
+                cross_ch2[3],
+                count_rate_2,
+            )
             Mainmeta =  {'Correlation':{'A_c0':file_path_A1,
                                         'A_c1':file_path_A2,
                                         'C_c0':file_path_C1,
                                         'C_c1':file_path_C2,
+                                        'A_c0_corr':corr_path_A1,
+                                        'A_c1_corr':corr_path_A2,
+                                        'C_c0_corr':corr_path_C1,
+                                        'C_c1_corr':corr_path_C2,
                                        },
                      'meta':{
                          'time_bin':dpg.get_value('left_panel_drag_time_binning'),
@@ -1074,14 +1501,63 @@ class _TB_corr_common:
                  }
             self.files[self.anal_file]['Meta']=Mainmeta
             self.SaveSinglePickle(self.anal_file)
+            self.callback_crossCorr_check(
+                'DUMMY',
+                dpg.get_value('FCS_cross_check'),
+            )
             self.plot_ACF()
-            self.res_to_exp['result_ACF_1'].to_csv(file_path_A1,sep='\t',index=False)
-            self.res_to_exp['result_ACF_2'].to_csv(file_path_A2,sep='\t',index=False)
-            self.res_to_exp['result_CCF_1'].to_csv(file_path_C1,sep='\t',index=False)
-            self.res_to_exp['result_CCF_2'].to_csv(file_path_C2,sep='\t',index=False)
             chnkpath = os.path.join(self.output_path,self.anal_file+'.chnk')
             with open(chnkpath, "wb") as p:
                 pickle.dump(self.chunks, p)
+
+        dpg.set_item_label(sender, label0)
+
+    def correlate(self, sender, app_data, progress_label=None):
+        old_button_label = dpg.get_item_label(sender)
+        dpg.bind_item_theme(sender, "fit_button_theme_busy")
+        try:
+            effective_progress_label = (
+                progress_label
+                if progress_label is not None
+                else "Correlating file 1/1"
+            )
+            return self._correlate_impl(
+                sender,
+                app_data,
+                effective_progress_label,
+            )
+        finally:
+            dpg.bind_item_theme(sender, "fit_button_theme")
+            dpg.set_item_label(sender, old_button_label)
+
+    def _release_loaded_measurement(self):
+        """Release large arrays before loading the next independent file."""
+        self.TT_xdata_1 = np.empty(0, dtype=float)
+        self.TT_ydata_1 = np.empty(0, dtype=np.int64)
+        self.TT_xdata_2 = np.empty(0, dtype=float)
+        self.TT_ydata_2 = np.empty(0, dtype=np.int64)
+        self.TT_xdata_1_chunked = np.empty(0, dtype=float)
+        self.TT_ydata_1_chunked = np.empty(0, dtype=float)
+        self.TT_xdata_2_chunked = np.empty(0, dtype=float)
+        self.TT_ydata_2_chunked = np.empty(0, dtype=float)
+        self.chunks = {}
+        self.res_to_exp = {}
+        gc.collect()
+        try:
+            malloc_trim = ctypes.CDLL(None).malloc_trim
+            malloc_trim.argtypes = [ctypes.c_size_t]
+            malloc_trim.restype = ctypes.c_int
+            malloc_trim(0)
+        except (AttributeError, OSError):
+            pass
+
+    def _archive_measurement_session(self, filename):
+        """Move a completed session out of the input directory."""
+        source = os.path.join(self.last_directory, filename + '.pck')
+        destination_directory = os.path.dirname(self.output_path)
+        destination = os.path.join(destination_directory, filename + '.pck')
+        if os.path.isfile(source):
+            os.replace(source, destination)
     
     
     #########################################################################           
@@ -1092,14 +1568,24 @@ class _TB_corr_common:
         dpg.set_value('Custom_chunks_check',False)
         old_button_label = dpg.get_item_label('Correlate_all_button')
         dpg.bind_item_theme('Correlate_all_button', "fit_button_theme_busy")
-        for i, file in enumerate(self.files):
-            fittin_label = 'Correlating file '+str(i+1)+' of '+str(len(self.files))
-            dpg.set_item_label('Correlate_all_button',fittin_label)
-            dpg.set_value('file_box',file)
-            self.callback_listbox('file_box',file)
-            self.correlate('Correlate_once_button',None)
-        dpg.bind_item_theme('Correlate_all_button', "fit_button_theme")
-        dpg.set_item_label('Correlate_all_button',old_button_label)
+        try:
+            for i, file in enumerate(self.files):
+                if i > 0:
+                    self._release_loaded_measurement()
+                fittin_label = f"Correlating file {i + 1}/{len(self.files)}"
+                dpg.set_item_label('Correlate_all_button',fittin_label)
+                dpg.set_value('file_box',file)
+                if i > 0 or self.anal_file != file:
+                    self.callback_listbox('file_box',file)
+                self.correlate(
+                    'Correlate_all_button',
+                    None,
+                    progress_label=fittin_label,
+                )
+                self._archive_measurement_session(file)
+        finally:
+            dpg.bind_item_theme('Correlate_all_button', "fit_button_theme")
+            dpg.set_item_label('Correlate_all_button',old_button_label)
             
     
     
@@ -1173,6 +1659,12 @@ class _TB_corr_common:
                 chan = ''
                 self.files[f[:-4].replace(chan,'')]['Channels']['_c0'] = f
 
+        self.files = dict(sorted(self.files.items(), key=lambda item: natural_sort_key(item[0])))
+        if not self.files:
+            self.anal_file = ''
+            dpg.configure_item('file_box', items=(), default_value='')
+            self.show_error('No supported time-binned data files were found in the selected directory.')
+            return
         self.UpdataMETA()
         self.anal_file = list(self.files.keys())[0]
         dpg.configure_item('file_box', items=list(self.files.keys()),default_value = self.anal_file)
@@ -1488,6 +1980,8 @@ class _TB_corr_common:
             pass
         else:
             os.mkdir(cross_2_path)
+        # dpg.set_value('display_savepath_text',corrpath)
+        # dpg.set_value('display_savepath_text_tooltip_text',dpg.get_value('display_savepath_text'))
         self.output_path = corrpath
         fb_items = dpg.get_item_configuration('file_box')['items']
         if len(fb_items) != 0:

@@ -17,23 +17,224 @@ along with this file. If not, see <https://www.gnu.org/licenses/>.
 """
 
 '''The themes definitions.'''
+# with dpg.theme(tag='global'):
+
+#     with dpg.theme_component(dpg.mvAll):
+#         dpg.add_theme_color(dpg.mvThemeCol_ModalWindowDimBg, (5, 5, 5,215))
+#         dpg.add_theme_color(dpg.mvThemeCol_Tab,
+#                             basf._hsv_to_rgb(2/7.0, 0.3, 0.3),category=dpg.mvThemeCat_Core
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_TabHovered,
+#                             basf._hsv_to_rgb(2/7.0, 0.8, 0.8),category=dpg.mvThemeCat_Core
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_TabActive,
+#                             basf._hsv_to_rgb(2/7.0, 0.7, 0.7),category=dpg.mvThemeCat_Core
+#                            )
+#         dpg.bind_theme('global')
+        
+# with dpg.theme(tag="fit_button_theme"):
+#     '''Theme for active buttons'''
+#     with dpg.theme_component(dpg.mvButton):
+#         dpg.add_theme_color(dpg.mvThemeCol_Button,
+#                             basf._hsv_to_rgb(0.2857, 0.6, 0.6)
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
+#                             basf._hsv_to_rgb(2/7.0, 0.8, 0.8)
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+#                             basf._hsv_to_rgb(2/7.0, 0.7, 0.7)
+#                            )
+#     with dpg.theme_component(dpg.mvButton,enabled_state=False):
+#         dpg.add_theme_color(dpg.mvThemeCol_Button,
+#                             basf._hsv_to_rgb(2/7.0, 0.3, 0.3)
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
+#                             basf._hsv_to_rgb(2/7.0, 0.3, 0.3)
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+#                             basf._hsv_to_rgb(2/7.0, 0.3, 0.3)
+#                            )
+                           
+        
+# with dpg.theme(tag="fit_button_theme_inactive"):
+#     '''Theme for inactive buttons'''
+#     with dpg.theme_component(dpg.mvButton):
+#         dpg.add_theme_color(dpg.mvThemeCol_Button,
+#                             basf._hsv_to_rgb(2/7.0, 0.4, 0.6)
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+#                             basf._hsv_to_rgb(2/7.0, 0.7, 0.7)
+#                            )
+                           
+# with dpg.theme(tag="fit_button_theme_busy"):
+#     '''Theme for inactive (busy) buttons'''
+#     with dpg.theme_component(dpg.mvButton):
+#         dpg.add_theme_color(dpg.mvThemeCol_Button,
+#                             (202, 95, 72, 255))  
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+#                             (180, 80, 60, 255))  
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
+#                             (160, 70, 50, 255))  
+
+        
+# with dpg.theme(tag="plot_theme"):
+#     '''Themes for plot.'''
+#     with dpg.theme_component(dpg.mvScatterSeries):
+#         '''Theme for scattered points.'''
+#         dpg.add_theme_color(dpg.mvPlotCol_Line, (31, 255, 0), category=dpg.mvThemeCat_Plots)
+#         dpg.add_theme_style(dpg.mvPlotStyleVar_MarkerSize, 5, category=dpg.mvThemeCat_Plots)
+        
+#     with dpg.theme_component(dpg.mvLineSeries):
+#         '''Theme for solid lines.'''        
+#         dpg.add_theme_color(dpg.mvPlotCol_Line, (229, 80, 48), category=dpg.mvThemeCat_Plots)
+#         dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 4, category=dpg.mvThemeCat_Plots)
+        
+#     with dpg.theme_component(dpg.mvShadeSeries):
+#         '''Theme for shade areas (errors).'''
+#         dpg.add_theme_color(dpg.mvPlotCol_Fill, (62, 122, 56, 64), category=dpg.mvThemeCat_Plots)
+#         dpg.add_theme_color(dpg.mvPlotCol_Line, (62, 122, 56, 90), category=dpg.mvThemeCat_Plots)
+#         dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 4, category=dpg.mvThemeCat_Plots)
+        
+        
+# with dpg.theme(tag="Error_window_theme"):
+#     '''Theme for Error windows'''
+#     with dpg.theme_component(dpg.mvWindowAppItem):
+#         dpg.add_theme_color(dpg.mvThemeCol_WindowBg,
+#                             (139,16,16,255)
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive,
+#                             (83,23,23,255)
+#                            )
+#     with dpg.theme_component(dpg.mvButton):
+#         dpg.add_theme_color(dpg.mvThemeCol_Button,
+#                             (56,5,15,255)
+#                            )
+        
+# with dpg.theme(tag="Inactive_checkbox"):
+#     '''Theme for inactive checkboxes'''
+#     with dpg.theme_component(dpg.mvCheckbox):
+#         dpg.add_theme_color(dpg.mvThemeCol_CheckMark,
+#                             (0,119,200,153)#(194,194,194,45)
+#                            )
+#     with dpg.theme_component(dpg.mvCheckbox,enabled_state=False):
+#         dpg.add_theme_color(dpg.mvThemeCol_CheckMark,
+#                             (194,194,194,45)
+#                            )
+
+        
+# with dpg.theme(tag="Active_checkbox"):
+#     '''Theme for inactive checkboxes'''
+#     with dpg.theme_component(dpg.mvCheckbox):
+#         dpg.add_theme_color(dpg.mvThemeCol_CheckMark,
+#                             (0,119,200,153)#
+#                            )
+# BACKGROUND_COLOUR = (0,0,0,0)
+# with dpg.theme(tag='transparent_theme'):
+#     with dpg.theme_component(dpg.mvButton):
+#         dpg.add_theme_color(dpg.mvThemeCol_Button,
+#                             BACKGROUND_COLOUR
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonActive,
+#                             BACKGROUND_COLOUR
+#                            )
+#         dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered,
+#                             BACKGROUND_COLOUR
+#                            )
+# with dpg.theme(tag="menu_update_available"):
+#     with dpg.theme_component(dpg.mvMenu):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (246, 115, 10))
+#     with dpg.theme_component(dpg.mvMenuItem,enabled_state=False):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (246, 136, 10))
+#     with dpg.theme_component(dpg.mvMenuItem):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (246, 115, 10))
+
+
+# with dpg.theme(tag="menu_update_available_new"):
+#     with dpg.theme_component(dpg.mvMenu):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (246, 115, 10))
+#     with dpg.theme_component(dpg.mvMenuItem,enabled_state=False):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (62, 190, 15))
+#     with dpg.theme_component(dpg.mvMenuItem):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (62, 190, 15))
+
+# with dpg.theme(tag="menu_normal"):
+#     with dpg.theme_component(dpg.mvMenu):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255))
+#     with dpg.theme_component(dpg.mvMenuItem):
+#         dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255))
+        
+        
+# with dpg.theme(tag="plot_green_theme"):
+#             '''Themes for plot.'''
+#             with dpg.theme_component(dpg.mvScatterSeries):
+#                 '''Theme for scattered points.'''
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (31, 255, 0), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_MarkerSize, 5, category=dpg.mvThemeCat_Plots)
+
+#             with dpg.theme_component(dpg.mvLineSeries):
+#                 '''Theme for solid lines.'''        
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (31, 255, 0), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 1, category=dpg.mvThemeCat_Plots)
+
+#             with dpg.theme_component(dpg.mvShadeSeries):
+#                 '''Theme for shade areas (errors).'''
+#                 dpg.add_theme_color(dpg.mvPlotCol_Fill, (62, 122, 56, 64), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (62, 122, 56, 90), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 4, category=dpg.mvThemeCat_Plots)
+
+# with dpg.theme(tag="plot_green_inactive_theme"):
+#             '''Themes for plot.'''
+#             with dpg.theme_component(dpg.mvScatterSeries):
+#                 '''Theme for scattered points.'''
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (128, 138, 126), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_MarkerSize, 5, category=dpg.mvThemeCat_Plots)
+
+#             with dpg.theme_component(dpg.mvLineSeries):
+#                 '''Theme for solid lines.'''        
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (128, 138, 126), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 1, category=dpg.mvThemeCat_Plots)
+
+#             with dpg.theme_component(dpg.mvShadeSeries):
+#                 '''Theme for shade areas (errors).'''
+#                 dpg.add_theme_color(dpg.mvPlotCol_Fill, (62, 122, 56, 64), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (62, 122, 56, 90), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 4, category=dpg.mvThemeCat_Plots)
+
+
+# with dpg.theme(tag="plot_yellow_theme"):
+#             '''Themes for plot.'''
+#             with dpg.theme_component(dpg.mvScatterSeries):
+#                 '''Theme for scattered points.'''
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (200, 206, 75), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_MarkerSize, 5, category=dpg.mvThemeCat_Plots)
+
+#             with dpg.theme_component(dpg.mvLineSeries):
+#                 '''Theme for solid lines.'''        
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (200, 206, 75), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 1, category=dpg.mvThemeCat_Plots)
+#             with dpg.theme_component(dpg.mvShadeSeries):
+#                 '''Theme for shade areas (errors).'''
+#                 dpg.add_theme_color(dpg.mvPlotCol_Fill, (122, 62, 56, 90), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_color(dpg.mvPlotCol_Line, (122, 62, 56, 90), category=dpg.mvThemeCat_Plots)
+#                 dpg.add_theme_style(dpg.mvPlotStyleVar_LineWeight, 4, category=dpg.mvThemeCat_Plots)
+
 DARK = {
-    # Window base colors
+    # baza okien
     "viewport_bg":        (0, 0, 0, 255),
     "window_bg": (37, 37, 38),
     "child_bg":  (34, 34, 36),
     "popup_bg":           (40, 50, 52, 255),
 
-    # Text
+    # tekst
     "text":               (235, 235, 235, 255),
     "text_disabled":      (150, 150, 150, 255),
 
-    # Fields and inputs
+    # pola / inputy
     "frame_bg":           (51, 51, 55, 255),
     "frame_bg_hovered":   (66, 66, 72, 255),
     "frame_bg_active":    (78, 78, 84, 255),
 
-    # General buttons
+    # buttony ogólne
     "button":             (66, 66, 70, 255),
     "button_hovered":     (86, 86, 92, 255),
     "button_active":      (98, 98, 106, 255),
@@ -51,7 +252,7 @@ DARK = {
     "fit_button_busy_hovered": (180, 80, 60, 255),
     "fit_button_busy_active":  (160, 70, 50, 255),
 
-    # Collapsible sections, selectors, and table-like headers
+    # sekcje rozwijane / select / table header-like
     "header":             (70, 70, 74, 255),
     "header_hovered":     (90, 90, 96, 255),
     "header_active":      (102, 102, 110, 255),
@@ -61,13 +262,13 @@ DARK = {
     "title_bg_active":    (60, 60, 65, 255),
     "menu_bar_bg":        (45, 45, 48, 255),
 
-    # Details
+    # detale
     "check_mark":         (0, 119, 200, 153),
     "check_mark_disabled":(194, 194, 194, 45),
     "separator": (45, 45, 48, 255),
     "modal_dim":          (5, 5, 5, 215),
 
-    # Menu statuses
+    # statusy menu
     "menu_text":          (255, 255, 255, 255),
     "menu_warn":          (246, 115, 10, 255),
     "menu_warn_disabled": (246, 136, 10, 255),
@@ -121,22 +322,22 @@ DARK = {
 
 
 LIGHT = {
-    # Window base colors
+    # baza okien
     "viewport_bg":        (246, 247, 246, 255),
     "window_bg":          (246, 247, 246, 255),
     "child_bg":           (252, 253, 252, 255),
     "popup_bg":           (255, 255, 255, 255),
 
-    # Text
+    # tekst
     "text":               (40, 42, 40, 255),
     "text_disabled":      (50, 55, 50, 255),
 
-    # Fields and inputs
+    # pola / inputy
     "frame_bg":           (225, 227, 225, 255),
     "frame_bg_hovered":   (232, 235, 232, 255),
     "frame_bg_active":    (204, 218, 204, 255),
 
-    # General buttons
+    # buttony ogólne
     "button":             (226, 230, 226, 255),
     "button_hovered":     (214, 220, 214, 255),
     "button_active":      (202, 210, 202, 255),
@@ -154,7 +355,7 @@ LIGHT = {
     "fit_button_busy_hovered": (210, 130, 110, 255),
     "fit_button_busy_active":  (190, 115, 95, 255),
 
-    # Sections
+    # sekcje
     "header":             (206, 209, 206, 255),
     "header_hovered":     (200, 202, 200, 255),
     "header_active":      (200, 205, 200, 255),
@@ -164,13 +365,13 @@ LIGHT = {
     "title_bg_active":    (230, 235, 230, 255),
     "menu_bar_bg":        (242, 245, 242, 255),
 
-    # Details
+    # detale
     "check_mark":         (110, 150, 120, 180),
     "check_mark_disabled":(190, 195, 190, 90),
     "separator":          (200, 205, 200, 255),
     "modal_dim":          (250, 250, 250, 220),
 
-    # Menu statuses
+    # statusy menu
     "menu_text":          (40, 42, 40, 255),
     "menu_warn":          (246, 115, 10, 255),
     "menu_warn_disabled": (246, 136, 10, 255),
@@ -393,7 +594,14 @@ def create_transparent_theme(tag="transparent_theme"):
             dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (0, 0, 0, 0), category=dpg.mvThemeCat_Core)
 
 
-def create_menu_themes(p, normal_tag="menu_normal", update_tag="menu_update_available", update_new_tag="menu_update_available_new"):
+def create_menu_themes(
+    p,
+    normal_tag="menu_normal",
+    update_tag="menu_update_available",
+    update_new_tag="menu_update_available_new",
+    tcp_active_tag="menu_tcp_active",
+    tcp_inactive_tag="menu_tcp_inactive",
+):
     with dpg.theme(tag=normal_tag):
         with dpg.theme_component(dpg.mvMenu):
             dpg.add_theme_color(dpg.mvThemeCol_Text, p["menu_text"], category=dpg.mvThemeCat_Core)
@@ -415,6 +623,18 @@ def create_menu_themes(p, normal_tag="menu_normal", update_tag="menu_update_avai
             dpg.add_theme_color(dpg.mvThemeCol_Text, p["menu_ok"], category=dpg.mvThemeCat_Core)
         with dpg.theme_component(dpg.mvMenuItem):
             dpg.add_theme_color(dpg.mvThemeCol_Text, p["menu_ok"], category=dpg.mvThemeCat_Core)
+
+    with dpg.theme(tag=tcp_active_tag):
+        with dpg.theme_component(dpg.mvText):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, (64, 210, 96, 255), category=dpg.mvThemeCat_Core
+            )
+
+    with dpg.theme(tag=tcp_inactive_tag):
+        with dpg.theme_component(dpg.mvText):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, (235, 72, 72, 255), category=dpg.mvThemeCat_Core
+            )
 
 
 def apply_viewport_color(p):

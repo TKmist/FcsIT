@@ -58,6 +58,7 @@ class _FCS_FITTING_mounting_functions:
                               enabled=True,
                               tag='reset_workspace_results_menu_item')
             
+        # dpg.add_menu_item(label="Settings",callback=lambda: dpg.show_item("Settings_window"),parent = 'menu_settings_dropout',before='fullscreenclick',tag='sett_menu_item')
         globalITEMS.windows.extend(['MC_menu_item',
                                     '2C_menu_item',
                                     '3C_menu_item',
@@ -65,6 +66,7 @@ class _FCS_FITTING_mounting_functions:
                                    'menu_workspace_dropout',
                                    'reset_workspace_menu_item',
                                    'reset_workspace_results_menu_item',
+                                   # 'sett_menu_item'
                                    ])
         
         
