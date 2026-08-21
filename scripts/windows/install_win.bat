@@ -132,7 +132,7 @@ echo Installing dependencies...
 "%PIP_EXE%" cache purge
 "%PYTHON_EXE%" -m pip install virtualenv --no-warn-script-location
 
-"%~dp0%VENV_DIR%\Scripts\pip.exe" install . --no-warn-script-location --disable-pip-version-check --verbose >install.log 2>&1
+"%~dp0%VENV_DIR%\Scripts\pip.exe" install . --no-warn-script-location --disable-pip-version-check --verbose
 if errorlevel 1 (
     echo Failed to install dependencies. Exiting.
     exit /b 1
@@ -165,16 +165,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Verify the CLI clients distributed beside install_win.bat.
-if not exist "%~dp0fcsit_call.ps1" (
-    echo FcsIT CLI client not found: "%~dp0fcsit_call.ps1"
-    exit /b 1
-)
+:: Verify the CLI client distributed beside install_win.bat.
 if not exist "%~dp0fcsit_call.bat" (
-    echo FcsIT CLI wrapper not found: "%~dp0fcsit_call.bat"
+    echo FcsIT CLI client not found: "%~dp0fcsit_call.bat"
     exit /b 1
 )
-echo FcsIT CLI clients verified next to "%LAUNCHER_BAT%".
+echo FcsIT CLI client verified next to "%LAUNCHER_BAT%".
 
 echo Creating the Windows shortcut on the Desktop...
 set "SHORTCUT_NAME=FcsIT.lnk"
@@ -228,7 +224,7 @@ if errorlevel 1 (
 :: Move files to the FcsIT directory
 echo Moving files to FcsIT directory...
 for %%f in (*) do (
-    if /I not "%%f"=="install_win.bat" if /I not "%%f"=="setup.py" if /I not "%%f"=="FcsIT.bat" if /I not "%%f"=="fcsit_call.bat" if /I not "%%f"=="fcsit_call.ps1" if /I not "%%f"=="FcsIT" if /I not "%%f"=="%VENV_DIR%" if /I not "%%f"=="%PYTHON_DIR%" (
+    if /I not "%%f"=="install_win.bat" if /I not "%%f"=="setup.py" if /I not "%%f"=="FcsIT.bat" if /I not "%%f"=="fcsit_call.bat" if /I not "%%f"=="FcsIT" if /I not "%%f"=="%VENV_DIR%" if /I not "%%f"=="%PYTHON_DIR%" (
         move "%%f" FcsIT\
         if errorlevel 1 (
             echo Failed to move file %%f to FcsIT directory. Exiting.
@@ -244,7 +240,7 @@ del install_win.bat
 
 echo Installation completed successfully!
 echo The FcsIT TCP/JSON server is enabled in "%LAUNCHER_BAT%".
-echo The FcsIT TCP/JSON CLI clients are installed next to "%LAUNCHER_BAT%".
+echo The FcsIT TCP/JSON CLI client is installed next to "%LAUNCHER_BAT%".
 echo The server listens on localhost port 8765 by default.
 pause
 

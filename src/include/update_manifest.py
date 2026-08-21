@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this file. If not, see <https://www.gnu.org/licenses/>.
 """
 
-"""Validate and execute declarative FcsIT dependency migrations."""
+# Validate and execute declarative FcsIT dependency migrations.
 
 from __future__ import annotations
 

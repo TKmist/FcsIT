@@ -40,12 +40,6 @@
       "target": "../fcsit_call.bat",
       "platform": "windows",
       "executable": false
-    },
-    {
-      "source": "res/update_payload/windows/fcsit_call.ps1",
-      "target": "../fcsit_call.ps1",
-      "platform": "windows",
-      "executable": false
     }
   ],
   "remove_files": [

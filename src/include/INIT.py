@@ -667,7 +667,6 @@ class FcsITUpdater:
             mappings = {
                 "FcsIT.bat": "FcsIT.bat",
                 "fcsit_call.bat": "fcsit_call.bat",
-                "fcsit_call.ps1": "fcsit_call.ps1",
             }
         else:
             platform_root = update_root / "scripts" / "linux"

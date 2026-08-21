@@ -13,9 +13,24 @@ rem FOR A PARTICULAR PURPOSE. See the GNU General Public License for more detail
 rem
 rem You should have received a copy of the GNU General Public License along with
 rem this program. If not, see https://www.gnu.org/licenses/.
-rem Run the PowerShell FcsIT TCP/JSON client from cmd.exe.
+rem Send one FcsIT TCP/JSON command using the bundled Python runtime.
 
-setlocal
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0fcsit_call.ps1" %*
+setlocal EnableExtensions
+set "FCSIT_PYTHON=%~dp0v_FcsIT_env\Scripts\python.exe"
+set "FCSIT_CLIENT=%~dp0FcsIT\include\tcp_client.py"
+
+if not exist "%FCSIT_PYTHON%" set "FCSIT_PYTHON=%~dp0python_embedded\python.exe"
+if not exist "%FCSIT_CLIENT%" set "FCSIT_CLIENT=%~dp0src\include\tcp_client.py"
+
+if not exist "%FCSIT_PYTHON%" (
+    echo FcsIT Python runtime not found. Run install_win.bat first. 1>&2
+    exit /b 1
+)
+if not exist "%FCSIT_CLIENT%" (
+    echo FcsIT TCP/JSON client module not found. 1>&2
+    exit /b 1
+)
+
+"%FCSIT_PYTHON%" "%FCSIT_CLIENT%" %*
 set "FCSIT_CALL_EXIT=%ERRORLEVEL%"
 endlocal & exit /b %FCSIT_CALL_EXIT%
