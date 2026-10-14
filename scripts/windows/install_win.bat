@@ -138,6 +138,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Build the bundled manual into the directory used by FcsIT.
+echo Building local documentation...
+"%~dp0%VENV_DIR%\Scripts\python.exe" setup.py build_docs
+if errorlevel 1 (
+    echo Failed to build local documentation. Exiting.
+    exit /b 1
+)
+
 :: Create the launcher .bat file
 echo Creating the FcsIT.bat file...
 echo @echo off > "%LAUNCHER_BAT%"

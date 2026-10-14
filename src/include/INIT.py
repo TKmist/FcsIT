@@ -42,6 +42,7 @@ from pathlib import Path
 
 import re
 import shutil
+import subprocess
 import zipfile
 
 import requests
@@ -626,6 +627,7 @@ class FcsITUpdater:
 
         extracted_dir = subfolders[0]
         updt_dir = os.path.join(tmp_dir, extracted_dir)
+        self._build_documentation(updt_dir)
         metafiles = ["LICENSE",  'GPLv3_short', "VERSION"]
         for f in metafiles:
             print("[Updater] Updating meta files ")
@@ -657,6 +659,52 @@ class FcsITUpdater:
 
         dpg.set_item_label("progress_button", "Removing temporary files")
         # shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    @staticmethod
+    def _build_documentation(update_root):
+        """Build documentation inside an extracted update before installation."""
+        update_root = Path(update_root).resolve()
+        requirements = update_root / "docs" / "requirements.txt"
+        setup_script = update_root / "setup.py"
+        if not requirements.is_file():
+            raise FileNotFoundError(
+                f"Update package is missing documentation requirements: {requirements}"
+            )
+        if not setup_script.is_file():
+            raise FileNotFoundError(
+                f"Update package is missing setup.py: {setup_script}"
+            )
+
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(requirements),
+            ],
+            cwd=update_root,
+            check=True,
+        )
+        subprocess.run(
+            [sys.executable, str(setup_script), "build_docs"],
+            cwd=update_root,
+            check=True,
+        )
+        generated_index = (
+            update_root
+            / "src"
+            / "doc"
+            / "assets"
+            / "help_html"
+            / "index.html"
+        )
+        if not generated_index.is_file():
+            raise RuntimeError(
+                f"Documentation build did not create {generated_index}."
+            )
+        print(f"[Updater] Built documentation in {generated_index.parent}")
 
     def _install_platform_control_files(self, update_root, application_root):
         """Install the launcher and TCP/JSON CLI files for the host platform."""

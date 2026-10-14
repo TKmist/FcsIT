@@ -10,7 +10,7 @@
   </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-V2.0.0-green" />
+  <img src="https://img.shields.io/badge/version-V2.0.1-green" />
   
 </p>
 <p align="center">
@@ -59,6 +59,11 @@ Make sure you are not using a VPN, as it may block the installation of PIP in th
 The installation script will download all required packages, create the run_FcsIT script or run_FcsIT.bat (on Windows), and create the shortcuts. 
 
 ## Release notes
+
+#### V2.0.1
+ - Fixed the **Calculate filter** button callback and ensured that TCSPC filtering is executed when enabled.
+ - Fixed PIE detection and the default fluorescence-lifetime gating range for channel 1, and ensured that photons outside the selected gate are excluded.
+ - Added automatic Jupyter Book documentation building and installation during application installation and updates on Linux and Windows.
 
 #### V2.0.0
  - Improved update algorithm.

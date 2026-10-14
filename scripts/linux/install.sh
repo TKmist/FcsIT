@@ -176,6 +176,15 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Build the bundled manual into the directory used by FcsIT.
+echo "Building local documentation..."
+python setup.py build_docs
+if [ $? -ne 0 ]; then
+    echo "Failed to build local documentation. Exiting."
+    deactivate
+    exit 1
+fi
+
 # Ensure the icon directory exists and copy the icon
 ICON_SRC="$PWD/src/res/icons/FcsIT.png"
 ICON_DEST="$HOME/.local/share/icons/FcsIT.png"

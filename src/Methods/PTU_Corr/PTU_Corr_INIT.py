@@ -2365,7 +2365,7 @@ class _PTU_Corr_common:
                 self.callback_TCSPC_dragline('TCSPC_L_dline_ch2',min2)
                 dpg.show_item('TCSPC_U_dline_ch2')
                 dpg.set_value('TCSPC_U_dline_ch2',max2)
-                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',min2)
+                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',max2)
         else:
             if len(self.channels) == 1: 
                 chan = list(self.channels)[0]
@@ -2392,7 +2392,7 @@ class _PTU_Corr_common:
                 self.callback_TCSPC_dragline('TCSPC_L_dline_ch2',min2)
                 dpg.hide_item('TCSPC_L_dline_ch2')
                 dpg.set_value('TCSPC_U_dline_ch2',max2)
-                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',min2)
+                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',max2)
                 dpg.hide_item('TCSPC_U_dline_ch2')
                                              
         
@@ -2993,13 +2993,22 @@ class _PTU_Corr_common:
 
 
             
-    def callback_calc_fltr_one(self,sender,app_data):
+    def callback_calc_fltr_one(self, sender=None, app_data=None, user_data=None):
         old_button_label = dpg.get_item_label('Calculate_filter_once_button')
         dpg.bind_item_theme('Calculate_filter_once_button', "fit_button_theme_busy")
-        self.TCSPC_filtering('Calculate_filter_once_button',sender=sender)
-        self._PCKL_DATA()
-        dpg.bind_item_theme('Calculate_filter_once_button', "fit_button_theme")
-        dpg.set_item_label('Calculate_filter_once_button',old_button_label)
+        try:
+            self.TCSPC_filtering(
+                'Calculate_filter_once_button', sender=sender
+            )
+            if not self.Filters:
+                raise RuntimeError('No TCSPC filters were generated.')
+            self._PCKL_DATA()
+            return self.Filters
+        finally:
+            dpg.bind_item_theme(
+                'Calculate_filter_once_button', "fit_button_theme"
+            )
+            dpg.set_item_label('Calculate_filter_once_button', old_button_label)
             
 
     def callback_calc_corr_one(self,sender,app_data):
@@ -3243,24 +3252,65 @@ class _PTU_Corr_common:
         tcspcBG_chk = tc.get('tcspcBG_chk')
         dlines = tc.get('dlines', {})
         BG_lvl = tc.get('BG_lvl', [0, 0])
-    
+
+        if self.fcs_data.PHOTONS['Mode'] == 'PIE' and len(self.channels) == 2:
+            standard_ch1 = (
+                self.TCSCP_draglines_init['TCSPC_L_dline_ch1'],
+                self.TCSCP_draglines_init['TCSPC_U_dline_ch1'],
+            )
+            saved_ch1 = (
+                dlines.get('TCSPC_L_dline_ch1'),
+                dlines.get('TCSPC_U_dline_ch1'),
+            )
+            standard_ch2 = (
+                self.TCSCP_draglines_init['TCSPC_L_dline_ch2'],
+                self.TCSCP_draglines_init['TCSPC_U_dline_ch2'],
+            )
+            saved_ch2 = (
+                dlines.get('TCSPC_L_dline_ch2'),
+                dlines.get('TCSPC_U_dline_ch2'),
+            )
+            if all(
+                saved is not None and np.isclose(saved, standard)
+                for saved, standard in zip(
+                    saved_ch1 + saved_ch2,
+                    standard_ch1 + standard_ch2,
+                )
+            ):
+                dlines = dict(dlines)
+                dlines['TCSPC_L_dline_ch1'] = \
+                    self.TCSCP_draglines_init['TCSPC_PIE_L_dline_ch1']
+                dlines['TCSPC_U_dline_ch1'] = \
+                    self.TCSCP_draglines_init['TCSPC_PIE_U_dline_ch1']
+
         if tgate is not None:
             dpg.set_value('TCSPC_timegate_check', bool(tgate))
-            self.callback_tcspc_timegate('TCSPC_timegate_check', bool(tgate))
-    
-        if tcspcBG_chk is not None:
-            dpg.set_value('TCSPC_BG_correction_check', bool(tcspcBG_chk))
-            self.callback_tcspc_BG('TCSPC_BG_correction_check', bool(tcspcBG_chk))
-    
-        if 'TCSPC_L_dline_ch1' in dlines: dpg.set_value('TCSPC_L_dline_ch1', dlines['TCSPC_L_dline_ch1'])
-        if 'TCSPC_U_dline_ch1' in dlines: dpg.set_value('TCSPC_U_dline_ch1', dlines['TCSPC_U_dline_ch1'])
-        if 'TCSPC_L_dline_ch2' in dlines: dpg.set_value('TCSPC_L_dline_ch2', dlines['TCSPC_L_dline_ch2'])
-        if 'TCSPC_U_dline_ch2' in dlines: dpg.set_value('TCSPC_U_dline_ch2', dlines['TCSPC_U_dline_ch2'])
-    
+
+        for line_name in (
+            'TCSPC_L_dline_ch1',
+            'TCSPC_U_dline_ch1',
+            'TCSPC_L_dline_ch2',
+            'TCSPC_U_dline_ch2',
+        ):
+            if line_name in dlines:
+                self.TCSCP_draglines[line_name] = dlines[line_name]
+                dpg.set_value(line_name, dlines[line_name])
+
         if isinstance(BG_lvl, (list, tuple)) and len(BG_lvl) >= 2:
             dpg.set_value('TCSPC_BG_dline_ch1', BG_lvl[0])
             dpg.set_value('TCSPC_BG_dline_ch2', BG_lvl[1])
-    
+
+        if tgate is not None:
+            self.callback_tcspc_timegate(
+                'TCSPC_timegate_check', bool(tgate)
+            )
+
+        if tcspcBG_chk is not None:
+            dpg.set_value('TCSPC_BG_correction_check', bool(tcspcBG_chk))
+            self.callback_tcspc_BG(
+                'TCSPC_BG_correction_check', bool(tcspcBG_chk)
+            )
+
     
         fcs = pkl.get('FCS info', {})
         self.DictOfChunks = fcs.get('CorrelatedChunks', {})

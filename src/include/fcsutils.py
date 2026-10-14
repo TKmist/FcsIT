@@ -306,6 +306,34 @@ class load_fcs:
             )
         return timestamps, detectors, nanotimes, metadata, marker_ids
 
+    @staticmethod
+    def _metadata_tag_value(metadata, tag_name):
+        """Return a scalar PicoQuant tag value from phconvert metadata."""
+        value = metadata.get(tag_name)
+        if value is None:
+            tags = metadata.get('tags', {})
+            if isinstance(tags, dict):
+                value = tags.get(tag_name)
+
+        while isinstance(value, dict):
+            next_value = value.get('data')
+            if next_value is None:
+                next_value = value.get('value')
+            if next_value is None:
+                break
+            value = next_value
+
+        if value is None:
+            return None
+
+        values = np.asarray(value).reshape(-1)
+        if values.size == 0:
+            return None
+        value = values[0]
+        if isinstance(value, bytes):
+            value = value.decode('utf-8', errors='replace')
+        return value
+
     def load_data(self, file):
         """Load PicoQuant PTU or PT3 TTTR events with phconvert."""
         if load_ptu is None or load_pt3 is None:
@@ -344,7 +372,9 @@ class load_fcs:
             tau_resolution = float(
                 np.asarray(metadata['nanotimes_unit']).reshape(-1)[0]
             )
-            mode = 'Standard'
+            pulse_config = self._metadata_tag_value(metadata, 'UsrPulseCfg')
+            mode = str(pulse_config).strip() if pulse_config is not None \
+                else 'Standard'
 
         detector_ids = np.unique(detectors)
         normalized_detectors = np.empty(detectors.shape, dtype=np.uint8)
@@ -624,7 +654,8 @@ class load_fcs:
                 filters = meta.get('TCSPC info', {}).get('Filters', {}).get(ch, {})
                 tcspc_filter = filters.get('tcscp', [])
                 filter_data = filters.get('Data', [])
-        
+
+                sig_f['w'][ch] = np.zeros(sig_f['t'][ch].size)
                 for i, tch in enumerate(tcspc_filter):
                     findex = np.where(tscpc == tch)[0]
                     sig_f['w'][ch][findex] = filter_data[i]
