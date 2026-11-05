@@ -202,5 +202,5 @@ tree.txt
 /.scripts/
 /.build/
 #/.github/
-/release/
+#/release/
 /poligon/

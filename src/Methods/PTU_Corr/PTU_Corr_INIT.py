@@ -22,8 +22,8 @@ import numpy as np
 import pandas as pd
 from numpy import log10,sqrt
 import multipletau as mtau
-from Methods.PTU_Corr.include.Third_party.readPTU_FLIM import PTUreader, PTUHeaderReader
 from include.fcsutils import load_fcs
+from pathlib import Path
 import pickle
 import time
 import include.INIT as inits
@@ -37,6 +37,11 @@ import argparse
 from functools import wraps
 from datetime import datetime
 import inspect
+import re
+
+def natural_sort_key(value):
+    return [int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r'(\d+)', str(value))]
 
 class _PTU_Corr_init:
     lprint = _bf.lnprint
@@ -358,7 +363,7 @@ class _PTU_Corr_common:
     def callback_Forget_PTU_data(self):
         if self.anal_file !='':
             if os.path.exists(os.path.join(self.last_directory,self.anal_file)):
-                file =self.anal_file.replace('.ptu','.pd1')
+                file = str(Path(self.anal_file).with_suffix('.pd1'))
                 if os.path.exists(os.path.join(self.last_directory,file)):
                     os.remove(os.path.join(self.last_directory,file))
                     self.load_data(os.path.join(self.last_directory,self.anal_file))
@@ -372,7 +377,7 @@ class _PTU_Corr_common:
         if self.anal_file !='':
             for file in self.files:
                 path = os.path.join(self.last_directory,file)
-                path =path.replace('.ptu','.pd1')
+                path = str(Path(path).with_suffix('.pd1'))
                 if os.path.exists(path):
                     os.remove(path)
                 else:
@@ -1013,6 +1018,12 @@ class _PTU_Corr_common:
     #########################################################################   
             
     def load_data(self,file):
+        self.Filters = {}
+        self.autoNorm_ch_1 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.autoNorm_ch_2 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.CrossNorm_ch_1 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.CrossNorm_ch_2 = pd.DataFrame(columns=['time','MEAN','SE'])
+        self.DictOfChunks = {}
         self.META_data = {'TT info':{},
                           'TCSPC info':{'Filters':{}},
                           'FCS info':{}
@@ -1092,7 +1103,7 @@ class _PTU_Corr_common:
         dpg.set_axis_limits('FCS_yaxis_chan1',0,1)  
         dpg.set_axis_limits('FCS_xaxis_chan2',0.001,1000)
         dpg.set_axis_limits('FCS_yaxis_chan2',0,1)  
-        pkl = file.replace('.ptu','.pd1')
+        pkl = str(Path(file).with_suffix('.pd1'))
         
         if os.path.exists(pkl):
             self.read_PKL_DATA(pkl)
@@ -1644,9 +1655,9 @@ class _PTU_Corr_common:
     def callback_directory_select(self, sender, app_data):
         self.last_directory = app_data['current_path']
         fls = os.listdir(self.last_directory)
-        fls = [f for f in fls if (f.endswith('.ptu'))]
+        fls = [f for f in fls if Path(f).suffix.lower() in ('.ptu', '.pt3')]
         fls = [f for f in fls if self.test_read(os.path.join(self.last_directory,f))]
-        self.files=fls
+        self.files=sorted(fls, key=natural_sort_key)
         if len(self.files)>0:
             self.anal_file = self.files[0]
             dpg.configure_item('file_box', items=self.files,default_value = self.anal_file)
@@ -1673,7 +1684,7 @@ class _PTU_Corr_common:
             self.basf.log_last_directory(self.last_directory)
             self.update_default_directory(self.last_directory)
         else:
-            self.show_error('Empty folder, or no .ptu files found.')
+            self.show_error('Empty folder, or no .ptu/.pt3 files found.')
     
     #########################################################################           
     #########################################################################           
@@ -1688,8 +1699,7 @@ class _PTU_Corr_common:
     #     return cond
 
     def test_read(self, file):
-        submode = PTUHeaderReader.read_tag_fast(file, "Measurement_SubMode")
-        return submode in (0, 1)
+        return Path(file).suffix.lower() in ('.ptu', '.pt3')
     
     def show_error(self,error_text):
         try:
@@ -2355,7 +2365,7 @@ class _PTU_Corr_common:
                 self.callback_TCSPC_dragline('TCSPC_L_dline_ch2',min2)
                 dpg.show_item('TCSPC_U_dline_ch2')
                 dpg.set_value('TCSPC_U_dline_ch2',max2)
-                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',min2)
+                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',max2)
         else:
             if len(self.channels) == 1: 
                 chan = list(self.channels)[0]
@@ -2382,7 +2392,7 @@ class _PTU_Corr_common:
                 self.callback_TCSPC_dragline('TCSPC_L_dline_ch2',min2)
                 dpg.hide_item('TCSPC_L_dline_ch2')
                 dpg.set_value('TCSPC_U_dline_ch2',max2)
-                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',min2)
+                self.callback_TCSPC_dragline('TCSPC_U_dline_ch2',max2)
                 dpg.hide_item('TCSPC_U_dline_ch2')
                                              
         
@@ -2809,6 +2819,7 @@ class _PTU_Corr_common:
             
 
     def plot_FCS(self):
+        show_cross_correlation = bool(dpg.get_value('FCS_cross_check'))
         is_Two_channel = len(self.channels) == 2
         is_chan_1 = list(self.channels)[0].endswith('_0')
         is_chan_2 = list(self.channels)[0].endswith('_1')
@@ -2899,7 +2910,7 @@ class _PTU_Corr_common:
             dpg.set_value('Cross_FCS_plot1_shade',[xCdata_1,yerrCdata_1[0],yerrCdata_1[1]])
             dpg.set_value('Cross_FCS_plot2',[xCdata_2,yCdata_2])
             dpg.set_value('Cross_FCS_plot2_shade',[xCdata_2,yerrCdata_2[0],yerrCdata_2[1]])
-            dpg.set_value('FCS_cross_check',True)
+            dpg.set_value('FCS_cross_check', show_cross_correlation)
             self.callback_crossCorr_check('FCS_cross_check',dpg.get_value('FCS_cross_check'))
             
     
@@ -2971,8 +2982,7 @@ class _PTU_Corr_common:
             self.callback_tcspc_BG('TCSPC_BG_correction_check',dpg.get_value('TCSPC_BG_correction_check'))
             dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
             dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
-            # self.add_chunks(reset=True)   # albo reset=False
-            # self._after_chunks_changed()
+            self.on_chunks_released()
             self.TCSPC_filtering('Calculate_filter_all_button',sender=sender)
             self._PCKL_DATA()
         dpg.bind_item_theme('Calculate_filter_all_button', "fit_button_theme")
@@ -2983,13 +2993,22 @@ class _PTU_Corr_common:
 
 
             
-    def callback_calc_fltr_one(self,sender,app_data):
+    def callback_calc_fltr_one(self, sender=None, app_data=None, user_data=None):
         old_button_label = dpg.get_item_label('Calculate_filter_once_button')
         dpg.bind_item_theme('Calculate_filter_once_button', "fit_button_theme_busy")
-        self.TCSPC_filtering('Calculate_filter_once_button',sender=sender)
-        self._PCKL_DATA()
-        dpg.bind_item_theme('Calculate_filter_once_button', "fit_button_theme")
-        dpg.set_item_label('Calculate_filter_once_button',old_button_label)
+        try:
+            self.TCSPC_filtering(
+                'Calculate_filter_once_button', sender=sender
+            )
+            if not self.Filters:
+                raise RuntimeError('No TCSPC filters were generated.')
+            self._PCKL_DATA()
+            return self.Filters
+        finally:
+            dpg.bind_item_theme(
+                'Calculate_filter_once_button', "fit_button_theme"
+            )
+            dpg.set_item_label('Calculate_filter_once_button', old_button_label)
             
 
     def callback_calc_corr_one(self,sender,app_data):
@@ -3153,7 +3172,8 @@ class _PTU_Corr_common:
         output ={'AutoCorr_1':self.autoNorm_ch_1,
                  'AutoCorr_2':self.autoNorm_ch_2,
                  'CrossCorr_12':self.CrossNorm_ch_1,
-                 'CrossCorr_21':self.CrossNorm_ch_2
+                 'CrossCorr_21':self.CrossNorm_ch_2,
+                 'CorrelatedChunks':self.DictOfChunks,
                 }
         return output
         
@@ -3165,12 +3185,12 @@ class _PTU_Corr_common:
         self.META_data['TT info']=self.TT_snapshot()
         self.META_data['TCSPC info']=self.TCSPC_snapshot()
         self.META_data['FCS info']=self.FCS_snapshot()
-        file=self.anal_file.replace('.ptu','.pd1')
+        file = str(Path(self.anal_file).with_suffix('.pd1'))
         path = self.last_directory
         pkl_path = os.path.join(path,file)
         with open(pkl_path, 'wb') as f:
             pickle.dump(self.META_data, f)
-        chnk_file=self.anal_file.replace('.ptu','.chnk')
+        chnk_file = str(Path(self.anal_file).with_suffix('.chnk'))
         path = self.last_directory
         chnk_path = os.path.join(path,chnk_file)
 
@@ -3232,26 +3252,68 @@ class _PTU_Corr_common:
         tcspcBG_chk = tc.get('tcspcBG_chk')
         dlines = tc.get('dlines', {})
         BG_lvl = tc.get('BG_lvl', [0, 0])
-    
+
+        if self.fcs_data.PHOTONS['Mode'] == 'PIE' and len(self.channels) == 2:
+            standard_ch1 = (
+                self.TCSCP_draglines_init['TCSPC_L_dline_ch1'],
+                self.TCSCP_draglines_init['TCSPC_U_dline_ch1'],
+            )
+            saved_ch1 = (
+                dlines.get('TCSPC_L_dline_ch1'),
+                dlines.get('TCSPC_U_dline_ch1'),
+            )
+            standard_ch2 = (
+                self.TCSCP_draglines_init['TCSPC_L_dline_ch2'],
+                self.TCSCP_draglines_init['TCSPC_U_dline_ch2'],
+            )
+            saved_ch2 = (
+                dlines.get('TCSPC_L_dline_ch2'),
+                dlines.get('TCSPC_U_dline_ch2'),
+            )
+            if all(
+                saved is not None and np.isclose(saved, standard)
+                for saved, standard in zip(
+                    saved_ch1 + saved_ch2,
+                    standard_ch1 + standard_ch2,
+                )
+            ):
+                dlines = dict(dlines)
+                dlines['TCSPC_L_dline_ch1'] = \
+                    self.TCSCP_draglines_init['TCSPC_PIE_L_dline_ch1']
+                dlines['TCSPC_U_dline_ch1'] = \
+                    self.TCSCP_draglines_init['TCSPC_PIE_U_dline_ch1']
+
         if tgate is not None:
             dpg.set_value('TCSPC_timegate_check', bool(tgate))
-            self.callback_tcspc_timegate('TCSPC_timegate_check', bool(tgate))
-    
-        if tcspcBG_chk is not None:
-            dpg.set_value('TCSPC_BG_correction_check', bool(tcspcBG_chk))
-            self.callback_tcspc_BG('TCSPC_BG_correction_check', bool(tcspcBG_chk))
-    
-        if 'TCSPC_L_dline_ch1' in dlines: dpg.set_value('TCSPC_L_dline_ch1', dlines['TCSPC_L_dline_ch1'])
-        if 'TCSPC_U_dline_ch1' in dlines: dpg.set_value('TCSPC_U_dline_ch1', dlines['TCSPC_U_dline_ch1'])
-        if 'TCSPC_L_dline_ch2' in dlines: dpg.set_value('TCSPC_L_dline_ch2', dlines['TCSPC_L_dline_ch2'])
-        if 'TCSPC_U_dline_ch2' in dlines: dpg.set_value('TCSPC_U_dline_ch2', dlines['TCSPC_U_dline_ch2'])
-    
+
+        for line_name in (
+            'TCSPC_L_dline_ch1',
+            'TCSPC_U_dline_ch1',
+            'TCSPC_L_dline_ch2',
+            'TCSPC_U_dline_ch2',
+        ):
+            if line_name in dlines:
+                self.TCSCP_draglines[line_name] = dlines[line_name]
+                dpg.set_value(line_name, dlines[line_name])
+
         if isinstance(BG_lvl, (list, tuple)) and len(BG_lvl) >= 2:
             dpg.set_value('TCSPC_BG_dline_ch1', BG_lvl[0])
             dpg.set_value('TCSPC_BG_dline_ch2', BG_lvl[1])
-    
+
+        if tgate is not None:
+            self.callback_tcspc_timegate(
+                'TCSPC_timegate_check', bool(tgate)
+            )
+
+        if tcspcBG_chk is not None:
+            dpg.set_value('TCSPC_BG_correction_check', bool(tcspcBG_chk))
+            self.callback_tcspc_BG(
+                'TCSPC_BG_correction_check', bool(tcspcBG_chk)
+            )
+
     
         fcs = pkl.get('FCS info', {})
+        self.DictOfChunks = fcs.get('CorrelatedChunks', {})
         try:
             self.autoNorm_ch_1 = fcs.get('AutoCorr_1', pd.DataFrame(columns=['time','MEAN','SE']))
         except Exception:
@@ -3290,7 +3352,7 @@ class _PTU_Corr_common:
         incorrect_files=[]
         for file in self.files:
             path = os.path.join(self.last_directory,file)
-            path = path.replace('.ptu','.pd1')
+            path = str(Path(path).with_suffix('.pd1'))
             if os.path.exists(path):
                 with open(path, 'rb') as f:
                     pkl = pickle.load(f)
@@ -3308,7 +3370,7 @@ class _PTU_Corr_common:
         incorrect_files=[]
         for file in self.files:
             path = os.path.join(self.last_directory,file)
-            path = path.replace('.ptu','.pd1')
+            path = str(Path(path).with_suffix('.pd1'))
             with open(path, 'rb') as f:
                 pkl = pickle.load(f)
             if len(pkl['FCS info']['AutoCorr_1'])>0 or len(pkl['FCS info']['AutoCorr_2'])>0:
@@ -3379,7 +3441,7 @@ class _PTU_Corr_common:
         if self.corr_export_ext == '.dat':
             if self.corr_export_all=='single':
                 is_cross = dpg.get_value('FCS_cross_check')
-                file = self.anal_file.replace('.ptu','.dat')
+                file = str(Path(self.anal_file).with_suffix('.dat'))
                 if len(self.channels) == 1:
                     chan = list(self.channels)[0]
                     if chan.endswith('_0'):
@@ -3428,8 +3490,8 @@ class _PTU_Corr_common:
             elif self.corr_export_all=='all':
                 for file in self.files:
                     pkl_path = os.path.join(self.last_directory,file)
-                    pkl_path = pkl_path.replace('.ptu','.pd1')
-                    expfile = file.replace('.ptu','.dat')
+                    pkl_path = str(Path(pkl_path).with_suffix('.pd1'))
+                    expfile = str(Path(file).with_suffix('.dat'))
                     with open(pkl_path, 'rb') as f:
                         pkl = pickle.load(f)
                     auto_ch_1 = pkl['FCS info']['AutoCorr_1']
@@ -3485,7 +3547,7 @@ class _PTU_Corr_common:
         elif self.corr_export_ext == '.corr':
             if self.corr_export_all=='single':
                 is_cross = dpg.get_value('FCS_cross_check')
-                file = self.anal_file.replace('.ptu','.corr')
+                file = str(Path(self.anal_file).with_suffix('.corr'))
                 if len(self.channels) == 1:
                     chan = list(self.channels)[0]
                     if chan.endswith('_0'):
@@ -3560,14 +3622,15 @@ class _PTU_Corr_common:
             elif self.corr_export_all=='all':
                 for file in self.files:
                     pkl_path = os.path.join(self.last_directory,file)
-                    pkl_path = pkl_path.replace('.ptu','.pd1')
-                    expfile = file.replace('.ptu','.corr')
+                    pkl_path = str(Path(pkl_path).with_suffix('.pd1'))
+                    expfile = str(Path(file).with_suffix('.corr'))
                     with open(pkl_path, 'rb') as f:
                         pkl = pickle.load(f)
                     auto_ch_1 = pkl['FCS info']['AutoCorr_1']
                     auto_ch_2 = pkl['FCS info']['AutoCorr_2']
                     Cross_ch_1 = pkl['FCS info']['CrossCorr_12']
                     Cross_ch_2 = pkl['FCS info']['CrossCorr_21']
+                    correlated_chunks = pkl['FCS info'].get('CorrelatedChunks', {})
                     CNTR=pkl['TT info']['chunk_rates']
                     is_cross = len(Cross_ch_1) >0 and len(Cross_ch_2)>0
                     if len(pkl['TCSPC info']['Filters']) == 1:
@@ -3580,7 +3643,7 @@ class _PTU_Corr_common:
                                 data.drop('Y_err',axis=1,inplace=True)
                             DATA={'Correlation':data,
                                   'CNTR':pkl['TT info']['chunk_rates'][chan],
-                                  'CorrelatedChunks':self.DictOfChunks['Channel_0']['ACF_1']
+                                  'CorrelatedChunks':correlated_chunks['Channel_0']['ACF_1']
                                  }
                             with open(pathA1, 'wb') as f:
                                 pickle.dump(DATA, f)
@@ -3592,7 +3655,7 @@ class _PTU_Corr_common:
                                 data.drop('Y_err',axis=1,inplace=True)
                             DATA={'Correlation':data,
                                   'CNTR':pkl['TT info']['chunk_rates'][chan],
-                                  'CorrelatedChunks':self.DictOfChunks['Channel_1']['ACF_2']
+                                  'CorrelatedChunks':correlated_chunks['Channel_1']['ACF_2']
                                  }
                             with open(pathA2, 'wb') as f:
                                 pickle.dump(DATA, f)
@@ -3604,7 +3667,7 @@ class _PTU_Corr_common:
                             data.drop('Y_err',axis=1,inplace=True)
                         DATA={'Correlation':data,
                               'CNTR':pkl['TT info']['chunk_rates']['channel_0'],
-                              'CorrelatedChunks':self.DictOfChunks['Channel_0']['ACF_1']
+                              'CorrelatedChunks':correlated_chunks['Channel_0']['ACF_1']
                               }
                         with open(pathA1, 'wb') as f:
                             pickle.dump(DATA, f)
@@ -3615,7 +3678,7 @@ class _PTU_Corr_common:
                             data.drop('Y_err',axis=1,inplace=True)
                         DATA={'Correlation':data,
                               'CNTR':pkl['TT info']['chunk_rates']['channel_1'],
-                              'CorrelatedChunks':self.DictOfChunks['Channel_1']['ACF_2']
+                              'CorrelatedChunks':correlated_chunks['Channel_1']['ACF_2']
                               }
                         with open(pathA2, 'wb') as f:
                             pickle.dump(DATA, f)
@@ -3627,7 +3690,7 @@ class _PTU_Corr_common:
                                 data.drop('Y_err',axis=1,inplace=True)
                             DATA={'Correlation':data,
                                   'CNTR':pkl['TT info']['chunk_rates']['channel_0'],
-                                  'CorrelatedChunks':self.DictOfChunks['Channel_0']['CCF_1']
+                                  'CorrelatedChunks':correlated_chunks['Channel_0']['CCF_1']
                                  }
                             with open(pathC1, 'wb') as f:
                                 pickle.dump(DATA, f)
@@ -3638,7 +3701,7 @@ class _PTU_Corr_common:
                                 data.drop('Y_err',axis=1,inplace=True)
                             DATA={'Correlation':data,
                                   'CNTR':pkl['TT info']['chunk_rates']['channel_1'],
-                                  'CorrelatedChunks':self.DictOfChunks['Channel_1']['CCF_2']
+                                  'CorrelatedChunks':correlated_chunks['Channel_1']['CCF_2']
                                  }
                             with open(pathC2, 'wb') as f:
                                 pickle.dump(DATA, f)

@@ -10,7 +10,7 @@
   </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-v1.0.6-green" />
+  <img src="https://img.shields.io/badge/version-V2.0.1-green" />
   
 </p>
 <p align="center">
@@ -19,9 +19,9 @@
     <img src="https://img.shields.io/badge/license-GPLv3-blue.svg" />
   </a>
   <a href="https://github.com/TKmist/FcsIT/releases/latest">
-    <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download" />
+    <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download&sort=date&cacheSeconds=300" />
   </a>
-  <a href="https://doi.org/10.5281/zenodo.19589716"><img src="https://zenodo.org/badge/1194606839.svg" alt="DOI"/></a>
+  <a href="https://doi.org/10.5281/zenodo.22050150"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.22050150.svg" alt="DOI"/></a>
 </p>
 
 <p align="center">
@@ -60,6 +60,22 @@ The installation script will download all required packages, create the run_FcsI
 
 ## Release notes
 
+#### V2.0.1
+ - Fixed the **Calculate filter** button callback and ensured that TCSPC filtering is executed when enabled.
+ - Fixed PIE detection and the default fluorescence-lifetime gating range for channel 1, and ensured that photons outside the selected gate are excluded.
+ - Added automatic Jupyter Book documentation building and installation during application installation and updates on Linux and Windows.
+
+#### V2.0.0
+ - Improved update algorithm.
+ - Added PTU and PT3 input through `phconvert`.
+ - Added lag-covariance estimation to the circular-block bootstrap and removed the non-circular `M / (M - L + 1)` variance multiplier.
+ - Added post-hoc sandwich parameter errors for new covariance-aware `.corr` files; legacy and ASCII files retain diagonal LM errors.
+ - Added automatic `.dat` and `.corr` export to the Time-binned correlation module.
+ - Added local TCP/JSON and `fcsit_call` interfaces for scripted analysis.
+ - Added a consent-based dependency migration for existing installations that need `phconvert`; fitting and time-binned analysis remain available if installation is postponed.
+ - Improved handling of unequal chunks, missing long-lag values, and covariance stability.
+ - Added platform-safe parallel Time-binned correlation for Linux and Windows.
+
 #### v1.0.6
  - Now reads and correlates data acquired in the T2 mode. The TCSPC filtering option is disabled for that data.
 #### v1.0.5
@@ -93,10 +109,9 @@ Details of modifications are provided in the [modified file](src/Methods/PTU_Cor
 
 ---
 
-During installation, this program may optionally download the `readPTU_FLIM.py`
-component from an [external repository](https://github.com/TKmist/readPTU_FLIM/tree/NIKON_correction).
-
-This component is licensed under the MIT License and is not distributed as part of this repository.
+PicoQuant PTU and PT3 files are read with the open-source `phconvert`
+dependency, which is installed automatically by `pip` from `setup.py` and is
+distributed under the MIT License.
 
 ---
 

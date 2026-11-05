@@ -594,7 +594,14 @@ def create_transparent_theme(tag="transparent_theme"):
             dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (0, 0, 0, 0), category=dpg.mvThemeCat_Core)
 
 
-def create_menu_themes(p, normal_tag="menu_normal", update_tag="menu_update_available", update_new_tag="menu_update_available_new"):
+def create_menu_themes(
+    p,
+    normal_tag="menu_normal",
+    update_tag="menu_update_available",
+    update_new_tag="menu_update_available_new",
+    tcp_active_tag="menu_tcp_active",
+    tcp_inactive_tag="menu_tcp_inactive",
+):
     with dpg.theme(tag=normal_tag):
         with dpg.theme_component(dpg.mvMenu):
             dpg.add_theme_color(dpg.mvThemeCol_Text, p["menu_text"], category=dpg.mvThemeCat_Core)
@@ -616,6 +623,18 @@ def create_menu_themes(p, normal_tag="menu_normal", update_tag="menu_update_avai
             dpg.add_theme_color(dpg.mvThemeCol_Text, p["menu_ok"], category=dpg.mvThemeCat_Core)
         with dpg.theme_component(dpg.mvMenuItem):
             dpg.add_theme_color(dpg.mvThemeCol_Text, p["menu_ok"], category=dpg.mvThemeCat_Core)
+
+    with dpg.theme(tag=tcp_active_tag):
+        with dpg.theme_component(dpg.mvText):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, (64, 210, 96, 255), category=dpg.mvThemeCat_Core
+            )
+
+    with dpg.theme(tag=tcp_inactive_tag):
+        with dpg.theme_component(dpg.mvText):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text, (235, 72, 72, 255), category=dpg.mvThemeCat_Core
+            )
 
 
 def apply_viewport_color(p):
