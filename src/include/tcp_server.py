@@ -91,7 +91,6 @@ class TCPJSONCommandServer:
         dispatcher: GuiCommandDispatcher,
         host: str = "127.0.0.1",
         port: int = 8765,
-        timeout: float = 300.0,
         token: str | None = None,
         max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES,
     ) -> None:
@@ -103,7 +102,6 @@ class TCPJSONCommandServer:
         self.dispatcher = dispatcher
         self.host = host
         self.port = port
-        self.timeout = timeout
         self.token = token if token is not None else os.getenv("FCSIT_TCP_TOKEN")
         self.max_request_bytes = max_request_bytes
         self._server: _ThreadingTCPServer | None = None
@@ -176,14 +174,7 @@ class TCPJSONCommandServer:
             pending = self.dispatcher.submit(name, arguments)
         except CommandError as exc:
             return self.error_response(request_id, str(exc))
-        if not pending.finished.wait(self.timeout):
-            return {
-                "protocol": PROTOCOL_NAME,
-                "version": PROTOCOL_VERSION,
-                "id": request_id,
-                "command_id": pending.command_id,
-                "status": "accepted",
-            }
+        pending.finished.wait()
         if pending.error:
             response = self.error_response(request_id, pending.error)
             response["command_id"] = pending.command_id

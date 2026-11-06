@@ -92,6 +92,7 @@ def _correlate_time_bin_chunk_process(task):
         channel_1_path,
         delta_ms,
         nsub,
+        compress,
     ) = task
     started = time.perf_counter()
     channel_0 = np.load(channel_0_path, mmap_mode='r')[start:stop]
@@ -104,6 +105,7 @@ def _correlate_time_bin_chunk_process(task):
             deltat=delta_ms,
             m=nsub,
             normalize=True,
+            compress=compress,
         ),
     }
     if channel_1_path is not None:
@@ -116,6 +118,7 @@ def _correlate_time_bin_chunk_process(task):
                     deltat=delta_ms,
                     m=nsub,
                     normalize=True,
+                    compress=compress,
                 ),
                 'CCF_1': mtau.correlate(
                     channel_0,
@@ -123,6 +126,7 @@ def _correlate_time_bin_chunk_process(task):
                     deltat=delta_ms,
                     m=nsub,
                     normalize=True,
+                    compress=compress,
                 ),
                 'CCF_2': mtau.correlate(
                     channel_1,
@@ -130,6 +134,7 @@ def _correlate_time_bin_chunk_process(task):
                     deltat=delta_ms,
                     m=nsub,
                     normalize=True,
+                    compress=compress,
                 ),
             }
         )
@@ -212,6 +217,13 @@ class _TB_corr_init:
                                        'width':self.internal_width_left_panel/2}
         self.left_panel_tab_1_col_2 = {'name':'left_panel_tab_1_col_2',
                                        'width':self.internal_width_left_panel/2}
+        self.left_panel_combo_multipletau_compress = {'name':'left_panel_combo_multipletau_compress',
+                                             'width':-1,
+                                            'items':['average','first']}
+        self.left_panel_drag_block_length = {'name':'left_panel_drag_block_length',
+                                     'width':-1,
+                                     'default_value':1,
+                                     'speed':1}
         self.left_panel_drag_time_binning = {'name':'left_panel_drag_time_binning',
                                              'width':-1,
                                             'default_time_bin':np.round(1.0e-6,6)}
@@ -221,7 +233,7 @@ class _TB_corr_init:
                                      'speed':2}
         self.left_panel_N_chunks = {'name':'left_panel_N_chunks',
                                     'width':-1,
-                                    'default_value':30,
+                                    'default_value':18,
                                     'speed':1}
         self.Custom_chunks_check = {'name':'Custom_chunks_check',
                                     'default_value':False}
@@ -296,7 +308,7 @@ class _TB_corr_common:
         self.ACF_1 = pd.DataFrame()
         self.res_to_exp = {'filename':'',
                            'result_ACF_1':pd.DataFrame()}
-        self.DialWinLis = []
+        self.DialWinList = []
         
     #########################################################################           
     #########################################################################           
@@ -596,7 +608,30 @@ class _TB_corr_common:
     #########################################################################   
         
         
+    def _enforce_tau_minimum(self):
+        """Keep the minimum lag time at or above one input time bin."""
+        time_bin_seconds = self.round_data(
+            float(dpg.get_value('left_panel_drag_time_binning'))
+        )
+        minimum_tau_ms = 1e3 * time_bin_seconds
+        tau_min_ms = self.round_data(
+            float(dpg.get_value('left_panel_tau_min'))
+        )
+        dpg.configure_item(
+            'left_panel_tau_min',
+            min_value=minimum_tau_ms,
+            clamped=True,
+        )
+        if tau_min_ms < minimum_tau_ms:
+            tau_min_ms = minimum_tau_ms
+            dpg.set_value('left_panel_tau_min', tau_min_ms)
+        return tau_min_ms
+
+    def callback_tau_min(self, sender, app_data):
+        self._enforce_tau_minimum()
+
     def callback_left_panel_drag_time_binning(self,sender,app_data):
+        self._enforce_tau_minimum()
         if not self.IsTwoChannel:
             if self.anal_file != '':
                 value = self.round_data(app_data)
@@ -689,6 +724,11 @@ class _TB_corr_common:
             dpg.set_value('left_panel_drag_subs',Npoints)
             Nchunks = meta['Meta']['meta']['Nchunks']
             dpg.set_value('left_panel_N_chunks',Nchunks)
+            block_length = meta['Meta']['meta'].get(
+                'cbb_block_length',
+                self.method_init.left_panel_drag_block_length['default_value'],
+            )
+            dpg.set_value('left_panel_drag_block_length', int(block_length))
             custom_chunks = meta['Meta']['meta']['custom_chunks']
             dpg.set_value('Custom_chunks_check',custom_chunks)
             self.chunks = meta['Meta']['meta']['chunks']
@@ -1080,6 +1120,7 @@ class _TB_corr_common:
         nsub,
         centers,
         edges,
+        compress,
     ):
         indices = self.chunks[chunk_name]['indices']
         start, stop = indices
@@ -1092,6 +1133,7 @@ class _TB_corr_common:
             deltat=1e3*bintime,
             m=nsub,
             normalize=True,
+            compress=compress,
         )
         acf_1_taus = acf_1_raw[1:, 0]
         acf_1 = pd.DataFrame(
@@ -1122,6 +1164,7 @@ class _TB_corr_common:
                 deltat=1e3*bintime,
                 m=nsub,
                 normalize=True,
+                compress=compress,
             )
             ccf_1_raw = mtau.correlate(
                 ydata_1,
@@ -1129,6 +1172,7 @@ class _TB_corr_common:
                 deltat=1e3*bintime,
                 m=nsub,
                 normalize=True,
+                compress=compress,
             )
             ccf_2_raw = mtau.correlate(
                 ydata_2,
@@ -1136,6 +1180,7 @@ class _TB_corr_common:
                 deltat=1e3*bintime,
                 m=nsub,
                 normalize=True,
+                compress=compress,
             )
 
             for result_name, raw_result in (
@@ -1199,6 +1244,7 @@ class _TB_corr_common:
         nsub,
         centers,
         edges,
+        compress
     ):
         default_workers = min(12, os.cpu_count() or 1)
         workers = max(
@@ -1237,6 +1283,7 @@ class _TB_corr_common:
                         channel_1_path,
                         1e3*bintime,
                         nsub,
+                        compress
                     )
                 )
             raw_results = [None] * len(tasks)
@@ -1293,9 +1340,11 @@ class _TB_corr_common:
 
     def _correlate_impl(self,sender,app_data,progress_label=None):
         bintime = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
+        compress = dpg.get_value('left_panel_combo_multipletau_compress')
+        block_size = int(dpg.get_value('left_panel_drag_block_length'))
         chnks = list(self.chunks.keys())
         npoints = dpg.get_value('left_panel_drag_subs')
-        tau_min = self.round_data(dpg.get_value('left_panel_tau_min'))
+        tau_min = self._enforce_tau_minimum()
         tau_max = dpg.get_value('left_panel_tau_max')
         decades = np.round(log10(tau_max)-log10(tau_min))
         nsub = int(np.floor(1*(npoints/decades)))
@@ -1312,6 +1361,7 @@ class _TB_corr_common:
                 nsub,
                 centers,
                 edges,
+                compress
             )
         except Exception as error:
             print(
@@ -1327,6 +1377,7 @@ class _TB_corr_common:
                     nsub,
                     centers,
                     edges,
+                    compress,
                 )
                 results[result['index']] = result
                 dpg.set_item_label(
@@ -1349,7 +1400,12 @@ class _TB_corr_common:
                 ACFFr['time'] = t
             else:
                 ACFFr['time'] = ACFFr['lagtime']
-            auto_ch1 = FCS._compute_MEAN_STD(ACFFr, acf_columns,chunk_lengths_sec=chunk_lengths_sec_1)
+            auto_ch1 = FCS._compute_MEAN_STD(
+                ACFFr,
+                acf_columns,
+                block_size=block_size,
+                chunk_lengths_sec=chunk_lengths_sec_1,
+            )
             ACFFr['MEAN'], ACFFr['SE'] = auto_ch1[:2]
             self.res_to_exp['lag_covariance_ACF_1'] = auto_ch1[2]
             self.res_to_exp['filename']=self.anal_file
@@ -1377,7 +1433,9 @@ class _TB_corr_common:
                              'custom_chunks':dpg.get_value('Custom_chunks_check'),
                              'chunks':self.chunks,
                              'tau_min':dpg.get_value('left_panel_tau_min'),
-                             'tau_max':dpg.get_value('left_panel_tau_max')
+                             'tau_max':dpg.get_value('left_panel_tau_max'),
+                             'multipletau_compress':compress,
+                             'cbb_block_length':block_size,
                              }
                      }
             self.files[self.anal_file]['Meta']=Mainmeta
@@ -1422,10 +1480,26 @@ class _TB_corr_common:
                 ACFFr_2['time'] = ACFFr_2['lagtime']
                 CCFFr_1['time'] = CCFFr_1['lagtime']
                 CCFFr_2['time'] = CCFFr_2['lagtime']
-            auto_ch1 = FCS._compute_MEAN_STD(ACFFr_1, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_1)
-            auto_ch2 = FCS._compute_MEAN_STD(ACFFr_2, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_2)
-            cross_ch1 = FCS._compute_MEAN_STD(CCFFr_1, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_1)
-            cross_ch2 = FCS._compute_MEAN_STD(CCFFr_2, chunk_columns,chunk_lengths_sec=chunk_lengths_sec_2)
+            auto_ch1 = FCS._compute_MEAN_STD(
+                ACFFr_1, chunk_columns,
+                block_size=block_size,
+                chunk_lengths_sec=chunk_lengths_sec_1,
+            )
+            auto_ch2 = FCS._compute_MEAN_STD(
+                ACFFr_2, chunk_columns,
+                block_size=block_size,
+                chunk_lengths_sec=chunk_lengths_sec_2,
+            )
+            cross_ch1 = FCS._compute_MEAN_STD(
+                CCFFr_1, chunk_columns,
+                block_size=block_size,
+                chunk_lengths_sec=chunk_lengths_sec_1,
+            )
+            cross_ch2 = FCS._compute_MEAN_STD(
+                CCFFr_2, chunk_columns,
+                block_size=block_size,
+                chunk_lengths_sec=chunk_lengths_sec_2,
+            )
             ACFFr_1['MEAN'], ACFFr_1['SE'] = auto_ch1[:2]
             ACFFr_2['MEAN'], ACFFr_2['SE'] = auto_ch2[:2]
             CCFFr_1['MEAN'], CCFFr_1['SE'] = cross_ch1[:2]
@@ -1496,7 +1570,9 @@ class _TB_corr_common:
                          'custom_chunks':dpg.get_value('Custom_chunks_check'),
                          'chunks':self.chunks,
                          'tau_min':dpg.get_value('left_panel_tau_min'),
-                         'tau_max':dpg.get_value('left_panel_tau_max')
+                         'tau_max':dpg.get_value('left_panel_tau_max'),
+                         'multipletau_compress':compress,
+                         'cbb_block_length':block_size,
                          }
                  }
             self.files[self.anal_file]['Meta']=Mainmeta
@@ -1510,10 +1586,19 @@ class _TB_corr_common:
             with open(chnkpath, "wb") as p:
                 pickle.dump(self.chunks, p)
 
-        dpg.set_item_label(sender, label0)
-
     def correlate(self, sender, app_data, progress_label=None):
-        old_button_label = dpg.get_item_label(sender)
+        canonical_labels = {
+            'Correlate_once_button': 'Calculate correlation once',
+            'Correlate_all_button': 'Calculate correlation all',
+        }
+        final_label = canonical_labels.get(sender, dpg.get_item_label(sender))
+        active_buttons = getattr(self, '_active_correlation_buttons', set())
+        if sender in active_buttons:
+            return None
+        active_buttons.add(sender)
+        self._active_correlation_buttons = active_buttons
+        was_enabled = bool(dpg.is_item_enabled(sender))
+        dpg.disable_item(sender)
         dpg.bind_item_theme(sender, "fit_button_theme_busy")
         try:
             effective_progress_label = (
@@ -1527,8 +1612,16 @@ class _TB_corr_common:
                 effective_progress_label,
             )
         finally:
-            dpg.bind_item_theme(sender, "fit_button_theme")
-            dpg.set_item_label(sender, old_button_label)
+            try:
+                if dpg.does_item_exist(sender):
+                    dpg.set_item_label(sender, final_label)
+                    dpg.bind_item_theme(sender, "fit_button_theme")
+                    if was_enabled:
+                        dpg.enable_item(sender)
+                    else:
+                        dpg.disable_item(sender)
+            finally:
+                active_buttons.discard(sender)
 
     def _release_loaded_measurement(self):
         """Release large arrays before loading the next independent file."""
@@ -1566,6 +1659,22 @@ class _TB_corr_common:
             
     def correlate_all(self,sender,app_data):
         dpg.set_value('Custom_chunks_check',False)
+        correlation_settings = {
+            'left_panel_drag_time_binning': dpg.get_value(
+                'left_panel_drag_time_binning'
+            ),
+            'left_panel_drag_subs': dpg.get_value('left_panel_drag_subs'),
+            'left_panel_N_chunks': dpg.get_value('left_panel_N_chunks'),
+            'left_panel_drag_block_length': dpg.get_value(
+                'left_panel_drag_block_length'
+            ),
+            'left_panel_combo_multipletau_compress': dpg.get_value(
+                'left_panel_combo_multipletau_compress'
+            ),
+            'left_panel_tau_min': dpg.get_value('left_panel_tau_min'),
+            'left_panel_tau_max': dpg.get_value('left_panel_tau_max'),
+            'FCS_cross_check': dpg.get_value('FCS_cross_check'),
+        }
         old_button_label = dpg.get_item_label('Correlate_all_button')
         dpg.bind_item_theme('Correlate_all_button', "fit_button_theme_busy")
         try:
@@ -1577,6 +1686,14 @@ class _TB_corr_common:
                 dpg.set_value('file_box',file)
                 if i > 0 or self.anal_file != file:
                     self.callback_listbox('file_box',file)
+                for tag, value in correlation_settings.items():
+                    dpg.set_value(tag, value)
+                self.callback_block_length(
+                    'left_panel_drag_block_length',
+                    correlation_settings['left_panel_drag_block_length'],
+                )
+                self.add_chunks()
+                self.calculate_shade()
                 self.correlate(
                     'Correlate_all_button',
                     None,
@@ -1890,6 +2007,7 @@ class _TB_corr_common:
     def on_chunks_released(self,sender, app_data):
         value = dpg.get_value("left_panel_N_chunks")
         self.add_chunks()  
+        self.callback_block_length('left_panel_drag_block_length',dpg.get_value('left_panel_drag_block_length'))
         self.calculate_shade()
         self.plot_TT()
 
@@ -1997,3 +2115,10 @@ class _TB_corr_common:
     def update_default_directory(self, last_directory):
         dpg.configure_item('file_dialog_id_TB', default_path=last_directory)
         dpg.configure_item('file_dialog_save_correlated', default_path=last_directory)
+
+
+    def callback_block_length(self,sender,app_data):
+        M = dpg.get_value('left_panel_N_chunks')
+        Lmax = max(1,int(np.floor((M-1)/2)))
+        validated_length = min(max(int(app_data), 1), Lmax)
+        dpg.set_value('left_panel_drag_block_length', validated_length)

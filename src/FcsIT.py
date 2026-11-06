@@ -28,8 +28,8 @@ import datetime
 import os
 import include.INIT as inits
 import argparse
-import faulthandler
 from pathlib import Path
+from include.runtime_logging import configure_runtime_logging
 from include.command_dispatcher import (
     GuiCommandDispatcher,
     create_default_registry,
@@ -38,7 +38,10 @@ from include.tcp_server import TCPJSONCommandServer
 from include.gui_commands import register_gui_commands
 BASE_DIR = Path(__file__).resolve().parent
 DOCS_DIR = os.path.join(BASE_DIR , "doc" , "assets" , "help_html")
-faulthandler.enable()
+RUNTIME_LOG_DIRECTORY = Path(
+    os.environ.get('FCSIT_LAUNCHER_DIR', BASE_DIR)
+).resolve()
+RUNTIME_LOG_PATH = configure_runtime_logging(RUNTIME_LOG_DIRECTORY)
 parser = argparse.ArgumentParser(description="Example program with optional timing log.")
 parser.add_argument("--timing", action="store_true", help="Enable timing log for functions.")
 parser.add_argument(
@@ -51,12 +54,6 @@ parser.add_argument(
     type=int,
     default=8765,
     help="Local TCP port used by the TCP/JSON server.",
-)
-parser.add_argument(
-    "--tcp-timeout",
-    type=float,
-    default=300.0,
-    help="Maximum time to wait for a GUI command result, in seconds.",
 )
 args = parser.parse_args()
 
@@ -154,7 +151,6 @@ if args.tcp_server:
     tcp_server = TCPJSONCommandServer(
         command_dispatcher,
         port=args.tcp_port,
-        timeout=args.tcp_timeout,
     )
     tcp_server.start()
     menu.set_tcp_json_status(True)

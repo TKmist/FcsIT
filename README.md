@@ -10,7 +10,7 @@
   </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" />
-  <img src="https://img.shields.io/badge/version-V2.0.1-green" />
+  <img src="https://img.shields.io/badge/version-V2.0.2-green" />
   
 </p>
 <p align="center">
@@ -21,7 +21,7 @@
   <a href="https://github.com/TKmist/FcsIT/releases/latest">
     <img src="https://img.shields.io/github/v/release/TKmist/FcsIT?label=download&sort=date&cacheSeconds=300" />
   </a>
-  <a href="https://doi.org/10.5281/zenodo.22050150"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.22050150.svg" alt="DOI"/></a>
+  <a href="https://doi.org/10.5281/zenodo.19351493"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.19351493.svg" alt="DOI"/></a>
 </p>
 
 <p align="center">
@@ -60,6 +60,15 @@ The installation script will download all required packages, create the run_FcsI
 
 ## Release notes
 
+#### V2.0.2
+ - Added explicit CBB block-length and segment-count controls to PTU/PT3 and Time-binned correlation, including valid-range enforcement.
+ - Added `average`/`first` multi-tau compression selection and bin-aware minimum-lag validation for Time-binned correlation.
+ - Separated PTU display binning from correlation settings and improved large-trace display, memory-error recovery, action-state restoration, and duplicate-run prevention.
+ - Added persistent `runtime_log.txt` diagnostics for Python exceptions and fatal errors.
+ - Hardened fitting weights, fitted-range and residual handling, brightness restoration, stored-result synchronisation, and aggregate brightness, reduced-chi-square, and p-value statistics.
+ - Updated correlation terminology and the PTU/PT3 and Time-binned interface documentation.
+ - Extended TCP/JSON parameter control and state reporting for CBB block length and Time-binned multi-tau compression.
+
 #### V2.0.1
  - Fixed the **Calculate filter** button callback and ensured that TCSPC filtering is executed when enabled.
  - Fixed PIE detection and the default fluorescence-lifetime gating range for channel 1, and ensured that photons outside the selected gate are excluded.
@@ -75,6 +84,7 @@ The installation script will download all required packages, create the run_FcsI
  - Added a consent-based dependency migration for existing installations that need `phconvert`; fitting and time-binned analysis remain available if installation is postponed.
  - Improved handling of unequal chunks, missing long-lag values, and covariance stability.
  - Added platform-safe parallel Time-binned correlation for Linux and Windows.
+ - Extended theme, settings, result-export, and update-status handling.
 
 #### v1.0.6
  - Now reads and correlates data acquired in the T2 mode. The TCSPC filtering option is disabled for that data.

@@ -175,19 +175,19 @@ class _FCS_Fitting_init:
         self.BRIGHT ={'name':'BRIGHT',
             'width':-1}
         self.Xunits = {'name':'Xunits',
-                         'width':int(165*self.size_ratio['width'])
+                         'width':int(185*self.size_ratio['width'])
                         }
         self.Yunits = {'name':'Yunits',
-                         'width':int(165*self.size_ratio['width'])
+                         'width':int(185*self.size_ratio['width'])
                         }
         self.df_min = {'name':'df_min',
-                         'width':int(165*self.size_ratio['width'])
+                         'width':int(185*self.size_ratio['width'])
                         }
         self.df_max = {'name':'df_max',
-                         'width':int(165*self.size_ratio['width'])
+                         'width':int(185*self.size_ratio['width'])
                         }
         self.Reset_range = {'name':'Reset_range',
-                         'width':int(165*self.size_ratio['width'])
+                         'width':int(185*self.size_ratio['width'])
                         }
         
         self.subplots = {'name':'subplots',
@@ -490,23 +490,22 @@ class _FCS_Fitting_vars_funct:
         '''Fit the model function'''
         my_model = Model(self.my_universal_function)   #create expression based on the selected model.
 
-        xdata=DF.X.values
-        ydata=DF.Y.values
-        
-        xdata=[n for n in DF.X.values]
-        ydata=[n for n in DF.Y.values]
+        finite_data = np.isfinite(DF.X.values) & np.isfinite(DF.Y.values)
+        fit_data = DF.loc[finite_data]
+        xdata = fit_data.X.to_numpy(dtype=float)
+        ydata = fit_data.Y.to_numpy(dtype=float)
         if self.FCS_data_type=='bin':
             DF.to_pickle('bin.pickle')
             if dpg.get_value('FITing_checkbox'):
-                ydata_err=[ 1/n for n in DF.Y_err.values]
-                results = my_model.fit(ydata, pars, x=xdata, weights=ydata_err,scale_covar=True)
+                weights = self._inverse_error_weights(fit_data, True)
+                results = my_model.fit(ydata, pars, x=xdata, weights=weights,scale_covar=True)
             else:
                 results = my_model.fit(ydata, pars, x=xdata)
         if self.FCS_data_type=='3C':
             DF.to_pickle('3C.pickle')
             if dpg.get_value('FITing_checkbox'):
-                ydata_err=[ 1/n for n in DF.Y_err.values]
-                results = my_model.fit(ydata, pars, x=xdata, weights=ydata_err,scale_covar=True)
+                weights = self._inverse_error_weights(fit_data, True)
+                results = my_model.fit(ydata, pars, x=xdata, weights=weights,scale_covar=True)
             else:
                 results = my_model.fit(ydata, pars, x=xdata)
         elif self.FCS_data_type == '2C':
@@ -514,6 +513,38 @@ class _FCS_Fitting_vars_funct:
         else:
             pass
         return results
+
+    @staticmethod
+    def _inverse_error_weights(data, enabled):
+        """Return finite inverse-error weights, falling back to unit weights."""
+        weights = np.ones(len(data), dtype=float)
+        if not enabled or 'Y_err' not in data.columns:
+            return weights
+
+        errors = data.Y_err.to_numpy(dtype=float)
+        valid = np.isfinite(errors) & (errors > 0.0)
+        if not np.any(valid):
+            return weights
+
+        weights.fill(0.0)
+        np.divide(1.0, errors, out=weights, where=valid)
+        return weights
+
+    @staticmethod
+    def _inverse_error_weights(data, enabled):
+        """Return finite inverse-error weights, falling back to unit weights."""
+        weights = np.ones(len(data), dtype=float)
+        if not enabled or 'Y_err' not in data.columns:
+            return weights
+
+        errors = data.Y_err.to_numpy(dtype=float)
+        valid = np.isfinite(errors) & (errors > 0.0)
+        if not np.any(valid):
+            return weights
+
+        weights.fill(0.0)
+        np.divide(1.0, errors, out=weights, where=valid)
+        return weights
 
 
     def evaluate_expr(self,x,**kwargs):
@@ -872,6 +903,20 @@ class _FCS_Fitting_vars_funct:
                         dpg.set_value('results_'+v+'_error',self.basf.zeros(RES_add[v+'_err']))
                     else:
                         dpg.set_value('results_'+v+'_error','Fixed')
+                if 'B' in RES_add:
+                    brightness = float(RES_add['B'])
+                    brightness_error = float(RES_add.get('B_err', 0.0))
+                    self.BR = [brightness, brightness_error]
+                    dpg.set_value('BRIGHT', brightness)
+                    dpg.set_value('results_bright_name', 'B')
+                    dpg.set_value(
+                        'results_bright_value',
+                        self.basf.zeros(brightness),
+                    )
+                    dpg.set_value(
+                        'results_bright_error',
+                        self.basf.zeros(brightness_error),
+                    )
 
             else:
                 pass
@@ -1310,6 +1355,10 @@ class _FCS_Fitting_vars_funct:
             self.lag_covariance is not None
             and self.FCS_data_type == 'bin'
             and 'Y_err' in self.df.columns
+            and np.all(np.isfinite(self.df.Y_err.to_numpy(dtype=float)))
+            and np.all(self.df.Y_err.to_numpy(dtype=float) > 0.0)
+            and np.all(np.isfinite(self.df.Y_err.to_numpy(dtype=float)))
+            and np.all(self.df.Y_err.to_numpy(dtype=float) > 0.0)
         ):
             positions = np.asarray(self.df.index, dtype=int)
             covariance = self.lag_covariance[np.ix_(positions, positions)]
@@ -1450,22 +1499,41 @@ class _FCS_Fitting_vars_funct:
         if len(self.RES_DF) != 0:
             mean_B = self.RES_DF['B'].mean()
             mean_chi = self.RES_DF['Red.chi_sqr'].mean()
+            mean_pvalue = self.RES_DF['p-value'].mean()
             dpg.set_value('results_bright_value_mean',self.basf.zeros(mean_B))
             dpg.set_value('results_chisqr_value_mean',self.basf.zeros(mean_chi))
+            dpg.set_value(
+                'results_pval_value_mean',
+                self.basf.zeros(mean_pvalue),
+            )
             if len(self.RES_DF)<2:
                 STD = '-'
                 dpg.set_value('results_bright_error_mean',STD)
                 dpg.set_value('results_chisqr_error_mean',STD)
+                dpg.set_value('results_pval_error_mean',STD)
             else:
                 STD_B = self.RES_DF['B'].std(ddof=1)
                 STD_chi = self.RES_DF['Red.chi_sqr'].std(ddof=1)
-                dpg.set_value('results_bright_error_mean',self.basf.zeros(STD))
-                dpg.set_value('results_chisqr_error_mean',self.basf.zeros(STD))
+                STD_pvalue = self.RES_DF['p-value'].std(ddof=1)
+                dpg.set_value(
+                    'results_bright_error_mean',
+                    self.basf.zeros(STD_B),
+                )
+                dpg.set_value(
+                    'results_chisqr_error_mean',
+                    self.basf.zeros(STD_chi),
+                )
+                dpg.set_value(
+                    'results_pval_error_mean',
+                    self.basf.zeros(STD_pvalue),
+                )
         else:
             dpg.set_value('results_bright_value_mean','-')
             dpg.set_value('results_bright_error_mean','-')
             dpg.set_value('results_chisqr_value_mean','-')
             dpg.set_value('results_chisqr_error_mean','-')
+            dpg.set_value('results_pval_value_mean','-')
+            dpg.set_value('results_pval_error_mean','-')
             
         
     def mount_tables(self):
@@ -1724,29 +1792,42 @@ class _FCS_Fitting_vars_funct:
         dpg.configure_item('acf_y',label="G("+'\u03C4'+")")
         dpg.configure_item('acf_y_log',label="Log(G("+'\u03C4'+"))")
         dpg.configure_item('res_x',label="Lag time, "+'\u03C4'+" [ms]")
-        DF=DF.astype(np.float32)
-        xdata=[n for n in DF.loc[(DF['X'] > 0)].dropna().X.values]
-        ydata=[n for n in DF.loc[(DF['X'] > 0)].dropna().Y.values]
+        DF=DF.astype(np.float64)
+        plot_data = DF.loc[
+            (DF['X'] > 0) & np.isfinite(DF['X']) & np.isfinite(DF['Y'])
+        ].copy()
+        if plot_data.empty:
+            return
+        xdata = plot_data.X.to_numpy(dtype=float)
+        ydata = plot_data.Y.to_numpy(dtype=float)
         ygreks = ydata
-        x_fit_data = 10**np.linspace(log10(DF.loc[(DF['X'] > 0)].dropna().X.min()),log10(DF.loc[(DF['X'] > 0)].dropna().X.max()),200)
+        x_fit_data = 10**np.linspace(log10(xdata.min()),log10(xdata.max()),200)
         y_fit_data = self.my_universal_function(x_fit_data,**self.VARIABLES)
         x_res_data=xdata
         if self.FCS_data_type=='bin':
-            if dpg.get_value('FITing_checkbox'):
-                weights = [1/n for n in DF.Y_err.values]
-            else:
-                weights = [1 for n in ydata]
+            weights = self._inverse_error_weights(
+                plot_data, dpg.get_value('FITing_checkbox')
+            )
         elif self.FCS_data_type=='3C':
-            weights = [1/n for n in DF.Y_err.values]
+            weights = self._inverse_error_weights(plot_data, True)
         elif self.FCS_data_type=='2C':
-            weights = [1 for n in ydata]
+            weights = np.ones(len(ydata), dtype=float)
         y_res_data=weights*(ydata-self.my_universal_function(xdata,**self.VARIABLES))
         self.callback_calculate_mol_bright('CNTR',dpg.get_value('CNTR'))
         dpg.set_axis_limits('acf_y',min(ygreks)-min(ygreks)*0.05,max(ygreks)+max(ygreks)*0.05)
-        dpg.set_axis_limits('acf_y_log',min(abs(DF.Y.values))/10,max(abs(DF.Y.values))*10)
+        positive_y = np.abs(ydata[np.nonzero(ydata)])
+        if positive_y.size:
+            dpg.set_axis_limits('acf_y_log',positive_y.min()/10,positive_y.max()*10)
         dpg.set_axis_limits('acf_x',min(xdata)-min(xdata)*0.05,max(xdata)+max(xdata)*0.05)
         dpg.set_axis_limits('acf_x_log',min(xdata)-min(xdata)*0.05,max(xdata)+max(xdata)*0.05)
-        dpg.set_axis_limits('res_y',min(y_res_data)-min(y_res_data)*0.05,max(y_res_data)+max(y_res_data)*0.05)
+        res_min = float(np.min(y_res_data))
+        res_max = float(np.max(y_res_data))
+        res_padding = max(
+            0.05 * (res_max - res_min),
+            0.05 * max(abs(res_min), abs(res_max)),
+            np.finfo(float).eps,
+        )
+        dpg.set_axis_limits('res_y',res_min-res_padding,res_max+res_padding)
         dpg.set_value('ACF_fit', [x_fit_data,y_fit_data ])
         dpg.set_value('RES_plot', [x_res_data,y_res_data ])
         dpg.set_value('ACF_plot', [xdata,ydata ])
@@ -1881,6 +1962,10 @@ class _FCS_Fitting_vars_funct:
                 ind_result_to_remove.append(i)
         self.RES_DF.drop(self.RES_DF.index[ind_result_to_remove],inplace=True)
         self.RES_DF.reset_index(drop=True,inplace=True)
+        self.workspace_iso['STORED RESULTS'] = {
+            column: list(self.RES_DF[column].values)
+            for column in self.RES_DF.columns
+        }
         self.write_res_to_table()
         self.write_to_average_table()
 
@@ -1943,44 +2028,88 @@ class _FCS_Fitting_vars_funct:
                 dpg.add_checkbox(label='',tag='results_delete_'+str(i)+'_check',
                                  callback=self.callback_remove_result)
     
+    def _set_range_widgets(self, lower, upper):
+        """Clamp and apply the displayed fit range in milliseconds."""
+        if (
+            not hasattr(self, 'df_copy')
+            or self.df_copy.empty
+            or 'X' not in self.df_copy.columns
+        ):
+            return float(lower), float(upper)
+        scaled_x = self.df_copy.X.to_numpy(dtype=float) * self._active_x_scale
+        finite_x = scaled_x[np.isfinite(scaled_x)]
+        data_lower = float(np.min(finite_x))
+        data_upper = float(np.max(finite_x))
+        if not np.isfinite(lower):
+            lower = data_lower
+        if not np.isfinite(upper):
+            upper = data_upper
+        lower = float(np.clip(lower, data_lower, data_upper))
+        upper = float(np.clip(upper, data_lower, data_upper))
+        if lower > upper:
+            lower, upper = upper, lower
+        positive_x = finite_x[finite_x > 0.0]
+        speed_reference = (
+            float(np.min(positive_x)) if positive_x.size else max(abs(data_lower), 1.0)
+        )
+        def drag_speed(value):
+            reference = abs(float(value))
+            if not np.isfinite(reference) or reference <= 0.0:
+                reference = speed_reference
+            return 10.0 ** (np.floor(np.log10(reference)) - 1.0)
+
+        dpg.configure_item(
+            'df_min', min_value=data_lower, max_value=data_upper,
+            speed=drag_speed(lower), clamped=True
+        )
+        dpg.configure_item(
+            'df_max', min_value=data_lower, max_value=data_upper,
+            speed=drag_speed(upper), clamped=True
+        )
+        dpg.set_value('df_min', lower)
+        dpg.set_value('df_max', upper)
+        return lower, upper
+
     def callback_Xunits(self,sender, app_data):
         '''Changes the time units in the FCS mode and replots.'''
-        Xunits = dpg.get_value('Xunits')
-        Yunits = dpg.get_value('Yunits')
-        self.df=self.df_copy.copy()
-        current_range=[dpg.get_value('df_min'),dpg.get_value('df_max')]
-        mask_min = self.df['X'] <= current_range[0]
-        mask_max = self.df['X'] >= current_range[1]
-        self.df.loc[mask_min,'X'] = np.nan
-        self.df.loc[mask_max,'X'] = np.nan
-        self.df.dropna(inplace=True)
-        if sender == 'Xunits':
-            self.df['X']=self.df.X*dpg.get_value('Xunits')*1e3
+        x_units = float(dpg.get_value('Xunits'))
+        y_units = float(dpg.get_value('Yunits'))
+        if not np.isfinite(x_units) or x_units <= 0.0:
+            x_units = 1e-12
+            dpg.set_value('Xunits', x_units)
+        if not np.isfinite(y_units) or y_units <= 0.0:
+            y_units = 1e-12
+            dpg.set_value('Yunits', y_units)
+        new_x_scale = x_units * 1e3
+        if (
+            not hasattr(self, 'df_copy')
+            or self.df_copy.empty
+            or 'X' not in self.df_copy.columns
+        ):
+            self._active_x_scale = new_x_scale
+            return
+        previous_x_scale = getattr(self, '_active_x_scale', new_x_scale)
+        current_lower = float(dpg.get_value('df_min'))
+        current_upper = float(dpg.get_value('df_max'))
+        if sender == 'Xunits' and previous_x_scale > 0.0:
+            factor = new_x_scale / previous_x_scale
+            current_lower *= factor
+            current_upper *= factor
+        self._active_x_scale = new_x_scale
+        current_lower, current_upper = self._set_range_widgets(
+            current_lower, current_upper
+        )
+
+        self.df = self.df_copy.copy()
+        self.df['X'] = self.df.X * new_x_scale
+        self.df['Y'] = self.df.Y * y_units
+        if 'Y_err' in self.df.columns:
+            self.df['Y_err'] = self.df.Y_err * y_units
+        self.df = self.df.loc[
+            (self.df.X >= current_lower) & (self.df.X <= current_upper)
+        ].dropna(subset=['X', 'Y'])
+        if not self.df.empty:
             self.plot_scater(self.df,'callback_Xunits')
-        elif sender == 'Yunits':
-            self.df['Y']=self.df.Y*dpg.get_value('Yunits')
-            if self.FCS_data_type == "bin":
-                if len(self.df.columns) == 3:
-                    self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
-                else:
-                    pass
-            elif self.FCS_data_type == "3C":
-                self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
-            elif self.FCS_data_type == "2C":
-                pass
-            self.plot_scater(self.df,'callback_Xunits')
-        elif sender == 'both':
-            self.df['X']=self.df.X*dpg.get_value('Xunits')*1e3
-            self.df['Y']=self.df.Y*dpg.get_value('Yunits')  
-            if self.FCS_data_type == "bin":
-                if len(self.df.columns) == 3:
-                    self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
-                else:
-                    pass
-            elif self.FCS_data_type == "3C":
-                self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
-            elif self.FCS_data_type == "2C":
-                pass
          
     def update_flist(self,fs,multi):
         '''Updates the filelist. '''
@@ -2040,7 +2169,9 @@ class _FCS_Fitting_vars_funct:
             self.cntr = data['CNTR'][0]
             dpg.set_value('CNTR',self.cntr)
             if len(self.df.columns) == 3:
-                dpg.set_value('FITing_checkbox', True)
+                errors = self.df.Y_err.to_numpy(dtype=float)
+                has_valid_errors = np.any(np.isfinite(errors) & (errors > 0.0))
+                dpg.set_value('FITing_checkbox', bool(has_valid_errors))
                 dpg.configure_item('FITing_checkbox', enabled=False)
             elif len(self.df.columns) == 2:
                 dpg.set_value('FITing_checkbox', False)
@@ -2174,60 +2305,65 @@ class _FCS_Fitting_vars_funct:
                     mask = self.df['X'] < bottom_range # change limits of X axis
                     self.df.loc[mask,'X'] = np.nan
 
+        self._active_x_scale = max(
+            float(dpg.get_value('Xunits')) * 1e3, np.finfo(float).tiny
+        )
+        data_lower = float(np.nanmin(self.df_copy.X)) * self._active_x_scale
+        data_upper = float(np.nanmax(self.df_copy.X)) * self._active_x_scale
+        if dpg.get_value('Sett_preserve_time'):
+            requested_lower = (
+                self.time_range[0] if self.time_range[0] is not None else data_lower
+            )
+            requested_upper = (
+                self.time_range[1] if self.time_range[1] is not None else data_upper
+            )
+        else:
+            requested_lower, requested_upper = data_lower, data_upper
+        self._set_range_widgets(requested_lower, requested_upper)
         self.callback_Xunits('both',dpg.get_value('Yunits'))
         self.workspace_test(f)  
 
 
     def callback_df_range(self,sender, app_data):
         '''Response to change in the x-value's range of analysed data'''
-        dmax=self.df_copy.X.max()
-        dmin=self.df_copy.X.min()
-        current_range=[dpg.get_value('df_min'),dpg.get_value('df_max')]
-        if sender =='df_max':
-            if app_data ==1:
-                dpg.configure_item(sender,speed=abs(app_data/10.))
-            if app_data ==0.:
-                dpg.set_value(sender,dpg.get_value('df_min')*2)
-            dpg.configure_item(sender,max_value=self.df_copy.X.max())
-            dpg.configure_item(sender,min_value=dpg.get_value('df_min'))
-            dpg.configure_item(sender,format='\u03C4'+' (max)  [ms] = %.'+str(self.basf.decimal_rounds_lim(app_data))+'f',)
-        if sender =='df_min':
-            dpg.configure_item(sender,max_value=dpg.get_value('df_max'))
-            dpg.configure_item(sender,min_value=self.df_copy.X.min())
-            dpg.configure_item(sender,format='\u03C4'+' (min)  [ms] = %.'+str(self.basf.decimal_rounds_lim(app_data))+'f',)
-        self.df=self.df_copy.copy()
-        dpg.configure_item(sender,speed=abs(app_data/10.))
-        mask_min = self.df['X'] <= current_range[0]
-        mask_max = self.df['X'] >= current_range[1]
-        self.df.loc[mask_min,'X'] = np.nan
-        self.df.loc[mask_max,'X'] = np.nan
-        self.df.dropna(inplace=True)
-        if self.df.X.max() != dmax or self.df.X.min()!=dmin:
+        if (
+            not hasattr(self, 'df_copy')
+            or self.df_copy.empty
+            or 'X' not in self.df_copy.columns
+        ):
+            return
+        current_range = self._set_range_widgets(
+            dpg.get_value('df_min'), dpg.get_value('df_max')
+        )
+        data_range = (
+            float(np.nanmin(self.df_copy.X)) * self._active_x_scale,
+            float(np.nanmax(self.df_copy.X)) * self._active_x_scale,
+        )
+        if current_range != data_range:
             dpg.configure_item('Reset_range',enabled=True)
             dpg.bind_item_theme('Reset_range', 'fit_button_theme') 
         else:
             dpg.configure_item('Reset_range',enabled=False)
             dpg.bind_item_theme('Reset_range', 'fit_button_theme_inactive') 
-        if len(self.df)!= 0:
-            xunit = dpg.get_value('Xunits')
-            yunit = dpg.get_value('Yunits')
-            self.callback_Xunits('Xunits',xunit)
-            self.callback_Xunits('Yunits',yunit)
-            self.plot_scater(self.df,'callback_df_range')
-        else:
-            pass
+        self.callback_Xunits('both', None)
         if dpg.get_value('Sett_preserve_time'):
             self.time_range = current_range[0],current_range[1]
         else:
             self.time_range=(None,None)
 
     def  callback_reset_df_range(self,sender,app_data):
-        current_range=[dpg.get_value('df_min'),dpg.get_value('df_max')]
-        self.df=self.df_copy.copy()
-        dpg.set_value('df_min',self.df_copy.X.min())
-        dpg.set_value('df_max',self.df_copy.X.max())
+        if (
+            not hasattr(self, 'df_copy')
+            or self.df_copy.empty
+            or 'X' not in self.df_copy.columns
+        ):
+            return
+        self._set_range_widgets(
+            float(np.nanmin(self.df_copy.X)) * self._active_x_scale,
+            float(np.nanmax(self.df_copy.X)) * self._active_x_scale,
+        )
         self.time_range = (None,None)
-        self.plot_scater(self.df,'callback_reset_df_range')
+        self.callback_Xunits('both', None)
         dpg.configure_item(sender,enabled=False)
         
         
@@ -2380,11 +2516,11 @@ class _FCS_Fitting_vars_funct:
         yfit = dd.FIT
         if self.FCS_data_type == "bin":
             if len(dd.columns) == 4:
-                dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
+                dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
             else:
                 dd['Residues']=(dd.Y-self.my_universal_function(xdata,**varias))
         elif self.FCS_data_type == "3C":
-            dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
+            dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
         elif self.FCS_data_type == "2C":
             dd['Residues']=(dd.Y-self.my_universal_function(xdata,**varias))
         res=dd['Residues']
@@ -2429,11 +2565,11 @@ class _FCS_Fitting_vars_funct:
             yfit = dd.FIT
             if self.FCS_data_type == "bin":
                 if len(dd.columns) == 4 and 'Residues' not in dd.columns:
-                    dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
+                    dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
                 else:
                     dd['Residues']=(dd.Y-self.my_universal_function(xdata,**varias))
             elif self.FCS_data_type == "3C"and 'Residues' not in dd.columns:
-                dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
+                dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
             else:
                 dd['Residues']=(dd.Y-self.my_universal_function(xdata,**varias))
             res=dd['Residues']
@@ -2813,7 +2949,9 @@ class _FCS_Fitting_vars_funct:
                 
             elif self.FCS_data_type == '3C':
                 dpg.configure_item('FITing_checkbox', enabled=True)
-                dpg.set_value('FITing_checkbox', True)
+                errors = self.df.Y_err.to_numpy(dtype=float)
+                has_valid_errors = np.any(np.isfinite(errors) & (errors > 0.0))
+                dpg.set_value('FITing_checkbox', bool(has_valid_errors))
             elif self.FCS_data_type == '2C':
                 dpg.configure_item('FITing_checkbox', enabled=False)
                 dpg.set_value('FITing_checkbox', False)
@@ -2957,8 +3095,13 @@ class _FCS_Fitting_vars_funct:
             pass
     def callback_reset_workspace_results(self,sender,app_data):
         self.define_RES_DF()
+        self.workspace_iso['STORED RESULTS'] = {
+            column: list(self.RES_DF[column].values)
+            for column in self.RES_DF.columns
+        }
         self.unmount_tables()
         self.mount_tables()
+        self.write_to_average_table()
         dpg.set_value('Xunits',0.00100000000)
         dpg.set_value('Yunits',1)
 

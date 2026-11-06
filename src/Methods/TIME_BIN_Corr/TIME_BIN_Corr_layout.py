@@ -169,6 +169,42 @@ with dpg.table(header_row=False,
                parent='file_window'):
     dpg.add_table_column(tag='left_panel_tab_1_col_1',width=method_init.left_panel_tab_1_col_1['width'])
     dpg.add_table_column(tag='left_panel_tab_1_col_2',width=method_init.left_panel_tab_1_col_2['width'])
+
+    with dpg.table_row(tag='left_panel_tab_1_row_0'):
+        dpg.add_combo(tag='left_panel_combo_multipletau_compress', 
+                            width = method_init.left_panel_combo_multipletau_compress['width'],
+                            default_value='average',
+                            items=method_init.left_panel_combo_multipletau_compress['items']
+                            # step=0,
+                            # format='Binning = %.E [s]',
+                            # callback = method_cmn.callback_left_panel_drag_time_binning,
+                            # min_value = 1e-12,
+                            # on_enter=True
+                            )
+        with dpg.tooltip('left_panel_combo_multipletau_compress',tag='left_panel_combo_multipletau_compress_tooltip'):
+            dpg.add_text('Select how the multipletau algorithm compresses the adjacent intensity samples at successive multi-tau correlation levels. \n "average" combines neighbouring samples, reducing statistical noise but potentially introducing systematic bias in the ACF. \n "first" retains the first sample from each pair, avoiding averaging-induced bias at the cost of increased statistical noise.',
+                         tag='left_panel_combo_multipletau_compress_tooltip_text')
+        # dpg.add_drag_int(tag='left_panel_drag_subs',
+        #                  width = method_init.left_panel_drag_subs['width'],
+        #                  default_value=method_init.left_panel_drag_subs['default_value'],
+        #                  speed = method_init.left_panel_drag_subs['speed'],
+        #                  format='Npoints = %i',
+        #                  min_value = 2,
+        #                  max_value = 1000,
+        #                  )
+        
+        dpg.add_drag_int(tag='left_panel_drag_block_length',
+                         width = method_init.left_panel_drag_block_length['width'],
+                         default_value=method_init.left_panel_drag_block_length['default_value'],
+                         speed = method_init.left_panel_drag_block_length['speed'],
+                         format='CBB block length = %i',
+                         enabled=True,
+                         min_value = 1,
+                         callback = method_cmn.callback_block_length
+                         )
+        with dpg.tooltip('left_panel_drag_block_length',tag='left_panel_drag_block_length_tooltip'):
+            dpg.add_text('Set the length of the CBB block, L.\n Allowed values: 1 ≤ L < N Seg./2)',tag='left_panel_drag_block_length_tooltip_text')
+    
     with dpg.table_row(tag='left_panel_tab_1_row_1'):
         dpg.add_input_float(tag='left_panel_drag_time_binning', 
                             width = method_init.left_panel_drag_time_binning['width'],
@@ -179,6 +215,9 @@ with dpg.table(header_row=False,
                             min_value = 1e-12,
                             on_enter=True
                             )
+        with dpg.tooltip('left_panel_drag_time_binning',tag='left_panel_drag_time_binning_tooltip'):
+            dpg.add_text('Set the time bin for the input time trace data.',
+                         tag='left_panel_drag_time_binning_tooltip_text')
         dpg.add_drag_int(tag='left_panel_drag_subs',
                          width = method_init.left_panel_drag_subs['width'],
                          default_value=method_init.left_panel_drag_subs['default_value'],
@@ -192,13 +231,15 @@ with dpg.table(header_row=False,
                          width = method_init.left_panel_N_chunks['width'],
                          default_value=method_init.left_panel_N_chunks['default_value'],
                          speed = method_init.left_panel_N_chunks['speed'],
-                         format='Nchunks = %i',
+                         format='N Seg. = %i',
                          min_value = 1,
                          )
         with dpg.item_handler_registry(tag="left_panel_N_chunks_handlers"):
             dpg.add_item_deactivated_after_edit_handler(callback=method_cmn.on_chunks_released)
         dpg.bind_item_handler_registry("left_panel_N_chunks", "left_panel_N_chunks_handlers")
-        dpg.add_checkbox(label="Custom chunks",
+        with dpg.tooltip('left_panel_N_chunks',tag='left_panel_N_chunks_tooltip'):
+            dpg.add_text('Set number of segments.',tag='left_panel_N_chunks_tooltip_text')
+        dpg.add_checkbox(label="Custom segments",
                          tag='Custom_chunks_check',
                          default_value = method_init.Custom_chunks_check['default_value'],
                          callback=method_cmn.show_chunks_drag_lines)
@@ -212,6 +253,8 @@ with dpg.table(header_row=False,
                            format='\u03C4'+' (min)  [ms] = %.4f',
                            enabled=True,
                            min_value = 1e-4,
+                           clamped=True,
+                           callback=method_cmn.callback_tau_min,
                            )
 
         dpg.add_drag_float(tag='left_panel_tau_max',
@@ -261,10 +304,20 @@ globalITEMS.windows.extend(['FILES_window_text_title',
                            'left_panel_tab_1_row_1',
                             'left_panel_tab_1_row_2',
                             'sep_left_2',
+                            'left_panel_drag_block_length',
+                            'left_panel_drag_block_length_tooltip',
+                            'left_panel_drag_block_length_tooltip_text',
+                            'left_panel_combo_multipletau_compress',
+                            'left_panel_combo_multipletau_compress_tooltip',
+                            'left_panel_combo_multipletau_compress_tooltip_text',
                            'left_panel_drag_time_binning',
+                            'left_panel_drag_time_binning_tooltip',
+                            'left_panel_drag_time_binning_tooltip_text',
                             'left_panel_drag_subs',
                             'left_panel_N_chunks',
                             'left_panel_N_chunks_handlers',
+                            'left_panel_N_chunks_tooltip',
+                            'left_panel_N_chunks_tooltip_text',
                             'Custom_chunks_check',
                             'Custom_chunks_check_tooltip',
                             'Custom_chunks_check_tooltip_text',

@@ -1,0 +1,271 @@
+--- src/Methods/FCS_fitting/FCS_FITTING_INIT.py
++++ src/Methods/FCS_fitting/FCS_FITTING_INIT.py
+@@ -492,7 +492,6 @@
+ 
+-        xdata=DF.X.values
+-        ydata=DF.Y.values
+-        
+-        xdata=[n for n in DF.X.values]
+-        ydata=[n for n in DF.Y.values]
++        finite_data = np.isfinite(DF.X.values) & np.isfinite(DF.Y.values)
++        fit_data = DF.loc[finite_data]
++        xdata = fit_data.X.to_numpy(dtype=float)
++        ydata = fit_data.Y.to_numpy(dtype=float)
+         if self.FCS_data_type=='bin':
+@@ -500,4 +499,4 @@
+             if dpg.get_value('FITing_checkbox'):
+-                ydata_err=[ 1/n for n in DF.Y_err.values]
+-                results = my_model.fit(ydata, pars, x=xdata, weights=ydata_err,scale_covar=True)
++                weights = self._inverse_error_weights(fit_data, True)
++                results = my_model.fit(ydata, pars, x=xdata, weights=weights,scale_covar=True)
+             else:
+@@ -507,4 +506,4 @@
+             if dpg.get_value('FITing_checkbox'):
+-                ydata_err=[ 1/n for n in DF.Y_err.values]
+-                results = my_model.fit(ydata, pars, x=xdata, weights=ydata_err,scale_covar=True)
++                weights = self._inverse_error_weights(fit_data, True)
++                results = my_model.fit(ydata, pars, x=xdata, weights=weights,scale_covar=True)
+             else:
+@@ -1777,7 +1794,12 @@
+         dpg.configure_item('res_x',label="Lag time, "+'\u03C4'+" [ms]")
+-        DF=DF.astype(np.float32)
+-        xdata=[n for n in DF.loc[(DF['X'] > 0)].dropna().X.values]
+-        ydata=[n for n in DF.loc[(DF['X'] > 0)].dropna().Y.values]
++        DF=DF.astype(np.float64)
++        plot_data = DF.loc[
++            (DF['X'] > 0) & np.isfinite(DF['X']) & np.isfinite(DF['Y'])
++        ].copy()
++        if plot_data.empty:
++            return
++        xdata = plot_data.X.to_numpy(dtype=float)
++        ydata = plot_data.Y.to_numpy(dtype=float)
+         ygreks = ydata
+-        x_fit_data = 10**np.linspace(log10(DF.loc[(DF['X'] > 0)].dropna().X.min()),log10(DF.loc[(DF['X'] > 0)].dropna().X.max()),200)
++        x_fit_data = 10**np.linspace(log10(xdata.min()),log10(xdata.max()),200)
+         y_fit_data = self.my_universal_function(x_fit_data,**self.VARIABLES)
+@@ -1785,10 +1807,9 @@
+         if self.FCS_data_type=='bin':
+-            if dpg.get_value('FITing_checkbox'):
+-                weights = [1/n for n in DF.Y_err.values]
+-            else:
+-                weights = [1 for n in ydata]
++            weights = self._inverse_error_weights(
++                plot_data, dpg.get_value('FITing_checkbox')
++            )
+         elif self.FCS_data_type=='3C':
+-            weights = [1/n for n in DF.Y_err.values]
++            weights = self._inverse_error_weights(plot_data, True)
+         elif self.FCS_data_type=='2C':
+-            weights = [1 for n in ydata]
++            weights = np.ones(len(ydata), dtype=float)
+         y_res_data=weights*(ydata-self.my_universal_function(xdata,**self.VARIABLES))
+@@ -1796,6 +1817,15 @@
+         dpg.set_axis_limits('acf_y',min(ygreks)-min(ygreks)*0.05,max(ygreks)+max(ygreks)*0.05)
+-        dpg.set_axis_limits('acf_y_log',min(abs(DF.Y.values))/10,max(abs(DF.Y.values))*10)
++        positive_y = np.abs(ydata[np.nonzero(ydata)])
++        if positive_y.size:
++            dpg.set_axis_limits('acf_y_log',positive_y.min()/10,positive_y.max()*10)
+         dpg.set_axis_limits('acf_x',min(xdata)-min(xdata)*0.05,max(xdata)+max(xdata)*0.05)
+         dpg.set_axis_limits('acf_x_log',min(xdata)-min(xdata)*0.05,max(xdata)+max(xdata)*0.05)
+-        dpg.set_axis_limits('res_y',min(y_res_data)-min(y_res_data)*0.05,max(y_res_data)+max(y_res_data)*0.05)
++        res_min = float(np.min(y_res_data))
++        res_max = float(np.max(y_res_data))
++        res_padding = max(
++            0.05 * (res_max - res_min),
++            0.05 * max(abs(res_min), abs(res_max)),
++            np.finfo(float).eps,
++        )
++        dpg.set_axis_limits('res_y',res_min-res_padding,res_max+res_padding)
+         dpg.set_value('ACF_fit', [x_fit_data,y_fit_data ])
+@@ -2000,40 +2030,76 @@
+     
++    def _set_range_widgets(self, lower, upper):
++        """Clamp and apply the displayed fit range in milliseconds."""
++        scaled_x = self.df_copy.X.to_numpy(dtype=float) * self._active_x_scale
++        finite_x = scaled_x[np.isfinite(scaled_x)]
++        data_lower = float(np.min(finite_x))
++        data_upper = float(np.max(finite_x))
++        if not np.isfinite(lower):
++            lower = data_lower
++        if not np.isfinite(upper):
++            upper = data_upper
++        lower = float(np.clip(lower, data_lower, data_upper))
++        upper = float(np.clip(upper, data_lower, data_upper))
++        if lower > upper:
++            lower, upper = upper, lower
++        positive_x = finite_x[finite_x > 0.0]
++        speed_reference = (
++            float(np.min(positive_x)) if positive_x.size else max(abs(data_lower), 1.0)
++        )
++        span = max(data_upper - data_lower, np.finfo(float).eps)
++
++        def drag_speed(value):
++            minimum_speed = max(speed_reference / 100.0, np.finfo(float).eps)
++            adaptive_speed = max(abs(value), speed_reference) / 100.0
++            maximum_speed = max(span / 1000.0, minimum_speed)
++            return min(max(adaptive_speed, minimum_speed), maximum_speed)
++
++        dpg.configure_item(
++            'df_min', min_value=data_lower, max_value=data_upper,
++            speed=drag_speed(lower), clamped=True
++        )
++        dpg.configure_item(
++            'df_max', min_value=data_lower, max_value=data_upper,
++            speed=drag_speed(upper), clamped=True
++        )
++        dpg.set_value('df_min', lower)
++        dpg.set_value('df_max', upper)
++        return lower, upper
++
+     def callback_Xunits(self,sender, app_data):
+         '''Changes the time units in the FCS mode and replots.'''
+-        Xunits = dpg.get_value('Xunits')
+-        Yunits = dpg.get_value('Yunits')
+-        self.df=self.df_copy.copy()
+-        current_range=[dpg.get_value('df_min'),dpg.get_value('df_max')]
+-        mask_min = self.df['X'] <= current_range[0]
+-        mask_max = self.df['X'] >= current_range[1]
+-        self.df.loc[mask_min,'X'] = np.nan
+-        self.df.loc[mask_max,'X'] = np.nan
+-        self.df.dropna(inplace=True)
+-        if sender == 'Xunits':
+-            self.df['X']=self.df.X*dpg.get_value('Xunits')*1e3
+-            self.plot_scater(self.df,'callback_Xunits')
+-        elif sender == 'Yunits':
+-            self.df['Y']=self.df.Y*dpg.get_value('Yunits')
+-            if self.FCS_data_type == "bin":
+-                if len(self.df.columns) == 3:
+-                    self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
+-                else:
+-                    pass
+-            elif self.FCS_data_type == "3C":
+-                self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
+-            elif self.FCS_data_type == "2C":
+-                pass
++        x_units = float(dpg.get_value('Xunits'))
++        y_units = float(dpg.get_value('Yunits'))
++        if not np.isfinite(x_units) or x_units <= 0.0:
++            x_units = 1e-12
++            dpg.set_value('Xunits', x_units)
++        if not np.isfinite(y_units) or y_units <= 0.0:
++            y_units = 1e-12
++            dpg.set_value('Yunits', y_units)
++        new_x_scale = x_units * 1e3
++        if not hasattr(self, 'df_copy') or self.df_copy.empty:
++            self._active_x_scale = new_x_scale
++            return
++        previous_x_scale = getattr(self, '_active_x_scale', new_x_scale)
++        current_lower = float(dpg.get_value('df_min'))
++        current_upper = float(dpg.get_value('df_max'))
++        if sender == 'Xunits' and previous_x_scale > 0.0:
++            factor = new_x_scale / previous_x_scale
++            current_lower *= factor
++            current_upper *= factor
++        self._active_x_scale = new_x_scale
++        current_lower, current_upper = self._set_range_widgets(
++            current_lower, current_upper
++        )
++
++        self.df = self.df_copy.copy()
++        self.df['X'] = self.df.X * new_x_scale
++        self.df['Y'] = self.df.Y * y_units
++        if 'Y_err' in self.df.columns:
++            self.df['Y_err'] = self.df.Y_err * y_units
++        self.df = self.df.loc[
++            (self.df.X >= current_lower) & (self.df.X <= current_upper)
++        ].dropna(subset=['X', 'Y'])
++        if not self.df.empty:
+             self.plot_scater(self.df,'callback_Xunits')
+-        elif sender == 'both':
+-            self.df['X']=self.df.X*dpg.get_value('Xunits')*1e3
+-            self.df['Y']=self.df.Y*dpg.get_value('Yunits')  
+-            if self.FCS_data_type == "bin":
+-                if len(self.df.columns) == 3:
+-                    self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
+-                else:
+-                    pass
+-            elif self.FCS_data_type == "3C":
+-                self.df['Y_err']=self.df.Y_err*dpg.get_value('Yunits')
+-            elif self.FCS_data_type == "2C":
+-                pass
+          
+@@ -2254,25 +2337,10 @@
+         '''Response to change in the x-value's range of analysed data'''
+-        dmax=self.df_copy.X.max()
+-        dmin=self.df_copy.X.min()
+-        current_range=[dpg.get_value('df_min'),dpg.get_value('df_max')]
+-        if sender =='df_max':
+-            if app_data ==1:
+-                dpg.configure_item(sender,speed=abs(app_data/10.))
+-            if app_data ==0.:
+-                dpg.set_value(sender,dpg.get_value('df_min')*2)
+-            dpg.configure_item(sender,max_value=self.df_copy.X.max())
+-            dpg.configure_item(sender,min_value=dpg.get_value('df_min'))
+-            dpg.configure_item(sender,format='\u03C4'+' (max)  [ms] = %.'+str(self.basf.decimal_rounds_lim(app_data))+'f',)
+-        if sender =='df_min':
+-            dpg.configure_item(sender,max_value=dpg.get_value('df_max'))
+-            dpg.configure_item(sender,min_value=self.df_copy.X.min())
+-            dpg.configure_item(sender,format='\u03C4'+' (min)  [ms] = %.'+str(self.basf.decimal_rounds_lim(app_data))+'f',)
+-        self.df=self.df_copy.copy()
+-        dpg.configure_item(sender,speed=abs(app_data/10.))
+-        mask_min = self.df['X'] <= current_range[0]
+-        mask_max = self.df['X'] >= current_range[1]
+-        self.df.loc[mask_min,'X'] = np.nan
+-        self.df.loc[mask_max,'X'] = np.nan
+-        self.df.dropna(inplace=True)
+-        if self.df.X.max() != dmax or self.df.X.min()!=dmin:
++        current_range = self._set_range_widgets(
++            dpg.get_value('df_min'), dpg.get_value('df_max')
++        )
++        data_range = (
++            float(np.nanmin(self.df_copy.X)) * self._active_x_scale,
++            float(np.nanmax(self.df_copy.X)) * self._active_x_scale,
++        )
++        if current_range != data_range:
+             dpg.configure_item('Reset_range',enabled=True)
+@@ -2282,10 +2350,3 @@
+             dpg.bind_item_theme('Reset_range', 'fit_button_theme_inactive') 
+-        if len(self.df)!= 0:
+-            xunit = dpg.get_value('Xunits')
+-            yunit = dpg.get_value('Yunits')
+-            self.callback_Xunits('Xunits',xunit)
+-            self.callback_Xunits('Yunits',yunit)
+-            self.plot_scater(self.df,'callback_df_range')
+-        else:
+-            pass
++        self.callback_Xunits('both', None)
+         if dpg.get_value('Sett_preserve_time'):
+@@ -2296,8 +2357,8 @@
+     def  callback_reset_df_range(self,sender,app_data):
+-        current_range=[dpg.get_value('df_min'),dpg.get_value('df_max')]
+-        self.df=self.df_copy.copy()
+-        dpg.set_value('df_min',self.df_copy.X.min())
+-        dpg.set_value('df_max',self.df_copy.X.max())
++        self._set_range_widgets(
++            float(np.nanmin(self.df_copy.X)) * self._active_x_scale,
++            float(np.nanmax(self.df_copy.X)) * self._active_x_scale,
++        )
+         self.time_range = (None,None)
+-        self.plot_scater(self.df,'callback_reset_df_range')
++        self.callback_Xunits('both', None)
+         dpg.configure_item(sender,enabled=False)
+@@ -2454,3 +2515,3 @@
+             if len(dd.columns) == 4:
+-                dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
++                dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
+             else:
+@@ -2458,3 +2519,3 @@
+         elif self.FCS_data_type == "3C":
+-            dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
++            dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
+         elif self.FCS_data_type == "2C":
+@@ -2503,3 +2564,3 @@
+                 if len(dd.columns) == 4 and 'Residues' not in dd.columns:
+-                    dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
++                    dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
+                 else:
+@@ -2507,3 +2568,3 @@
+             elif self.FCS_data_type == "3C"and 'Residues' not in dd.columns:
+-                dd['Residues']=(1/dd.Y_err)*(dd.Y-self.my_universal_function(xdata,**varias))
++                dd['Residues']=self._inverse_error_weights(dd, True)*(dd.Y-self.my_universal_function(xdata,**varias))
+             else:

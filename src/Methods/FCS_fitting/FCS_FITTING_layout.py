@@ -377,6 +377,8 @@ with dpg.group(tag='log_checkbox_group',
                        tag='Xunits',
                        show=True,
                        default_value=0.00100000000,
+                       min_value=1e-12,
+                       clamped=True,
                        format='Time units: %.0e [s]',
                        callback=method_cmn.callback_Xunits
                        )
@@ -388,6 +390,8 @@ with dpg.group(tag='log_checkbox_group',
                        tag='Yunits',
                        show=True,
                        default_value=1,
+                       min_value=1e-12,
+                       clamped=True,
                        format="%.0e \u00D7 G("+'\u03C4'+")",
                        callback=method_cmn.callback_Xunits
                        )
@@ -406,8 +410,9 @@ with dpg.group(tag='df_range_group',
                        show=True,
                        min_value=-1e312,
                        max_value=-1e312,
+                       clamped=True,
                        callback=method_cmn.callback_df_range,
-                       format='\u03C4'+' (min)  [ms] = %.4f',
+                       format='\u03C4'+' (min)  [ms] = %.6g',
                       )
     with dpg.tooltip('df_min'):
                 dpg.add_text("Define lowest value of lag time to plot.")
@@ -417,8 +422,9 @@ with dpg.group(tag='df_range_group',
                        show=True,
                        min_value=-1e312,
                        max_value=-1e312,
+                       clamped=True,
                        callback=method_cmn.callback_df_range,
-                       format='\u03C4'+' (max) [ms] = %.1f',
+                       format='\u03C4'+' (max) [ms] = %.6g',
                       )
     with dpg.tooltip('df_max'):
                 dpg.add_text("Define highest value of lag time to plot.")

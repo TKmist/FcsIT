@@ -116,9 +116,13 @@ _COMMAND_ARGUMENTS: dict[str, dict[str, dict[str, Any]]] = {
     "ptu_corr.load_directory": {"directory": STRING(required=True, description="Directory containing PTU or PT3 files.", constraints={"must_exist": True})},
     "ptu_corr.select_file": {"filename": STRING(required=True, description="Exact loaded PTU or PT3 filename.")},
     "ptu_corr.set_parameters": {
-        "time_bin": NUMBER(description="Time-bin width."),
+        "time_bin": NUMBER(description="Displayed time-bin width in seconds."),
         "points": INTEGER(description="Number of correlation points."),
-        "chunks": INTEGER(description="Number of signal chunks."),
+        "chunks": INTEGER(description="Number of signal segments."),
+        "cbb_block_length": INTEGER(
+            description="Circular-block-bootstrap block length.",
+            constraints={"minimum": 1},
+        ),
         "tau_min": NUMBER(description="Minimum correlation lag time."),
         "tau_max": NUMBER(description="Maximum correlation lag time."),
         "cross_correlation": BOOLEAN(description="Enable cross-correlation."),
@@ -151,7 +155,15 @@ _COMMAND_ARGUMENTS: dict[str, dict[str, dict[str, Any]]] = {
     "time_bin_corr.set_parameters": {
         "time_bin": NUMBER(description="Time-bin width."),
         "points": INTEGER(description="Number of correlation points."),
-        "chunks": INTEGER(description="Number of signal chunks."),
+        "chunks": INTEGER(description="Number of signal segments."),
+        "cbb_block_length": INTEGER(
+            description="Circular-block-bootstrap block length.",
+            constraints={"minimum": 1},
+        ),
+        "multi_tau_compression": STRING(
+            description="Multi-tau adjacent-sample compression mode.",
+            enum=["average", "first"],
+        ),
         "tau_min": NUMBER(description="Minimum correlation lag time."),
         "tau_max": NUMBER(description="Maximum correlation lag time."),
         "cross_correlation": BOOLEAN(description="Enable cross-correlation when available."),
@@ -921,19 +933,25 @@ class FcsITGuiCommands:
             "time_bin": "left_panel_drag_time_binning",
             "points": "left_panel_drag_subs",
             "chunks": "left_panel_N_chunks",
+            "cbb_block_length": "left_panel_drag_block_length",
             "tau_min": "left_panel_tau_min",
             "tau_max": "left_panel_tau_max",
             "cross_correlation": "FCS_cross_check",
             "time_gate": "TCSPC_timegate_check",
             "background_correction": "TCSPC_BG_correction_check",
         }
+        self._validate_cbb_block_length(arguments)
         self._set_known_values(arguments, tags)
         if "time_bin" in arguments:
             method.callback_left_panel_drag_time_binning(
                 tags["time_bin"], arguments["time_bin"]
             )
-        elif "chunks" in arguments:
+        if "chunks" in arguments:
             method.on_chunks_released()
+        if "cbb_block_length" in arguments:
+            method.callback_block_length(
+                tags["cbb_block_length"], arguments["cbb_block_length"]
+            )
         if "time_gate" in arguments:
             method.callback_tcspc_timegate(
                 tags["time_gate"], bool(arguments["time_gate"])
@@ -1203,6 +1221,7 @@ class FcsITGuiCommands:
                     "time_bin": "left_panel_drag_time_binning",
                     "points": "left_panel_drag_subs",
                     "chunks": "left_panel_N_chunks",
+                    "cbb_block_length": "left_panel_drag_block_length",
                     "tau_min": "left_panel_tau_min",
                     "tau_max": "left_panel_tau_max",
                     "cross_correlation": "FCS_cross_check",
@@ -1269,17 +1288,34 @@ class FcsITGuiCommands:
             "time_bin": "left_panel_drag_time_binning",
             "points": "left_panel_drag_subs",
             "chunks": "left_panel_N_chunks",
+            "cbb_block_length": "left_panel_drag_block_length",
+            "multi_tau_compression": "left_panel_combo_multipletau_compress",
             "tau_min": "left_panel_tau_min",
             "tau_max": "left_panel_tau_max",
             "cross_correlation": "FCS_cross_check",
         }
+        self._validate_cbb_block_length(arguments)
+        compression = arguments.get("multi_tau_compression")
+        if compression is not None and (
+            not isinstance(compression, str)
+            or compression not in {"average", "first"}
+        ):
+            raise CommandError(
+                "multi_tau_compression must be one of: average, first."
+            )
         self._set_known_values(arguments, tags)
         if "time_bin" in arguments:
             method.callback_left_panel_drag_time_binning(
                 tags["time_bin"], arguments["time_bin"]
             )
-        elif "chunks" in arguments:
+        if "chunks" in arguments:
             method.on_chunks_released(None, None)
+        if "cbb_block_length" in arguments:
+            method.callback_block_length(
+                tags["cbb_block_length"], arguments["cbb_block_length"]
+            )
+        if "tau_min" in arguments and "time_bin" not in arguments:
+            method.callback_tau_min(tags["tau_min"], arguments["tau_min"])
         if "cross_correlation" in arguments:
             required_results = {'result_ACF_1'}
             if method.IsTwoChannel:
@@ -1409,6 +1445,8 @@ class FcsITGuiCommands:
                     "time_bin": "left_panel_drag_time_binning",
                     "points": "left_panel_drag_subs",
                     "chunks": "left_panel_N_chunks",
+                    "cbb_block_length": "left_panel_drag_block_length",
+                    "multi_tau_compression": "left_panel_combo_multipletau_compress",
                     "tau_min": "left_panel_tau_min",
                     "tau_max": "left_panel_tau_max",
                     "cross_correlation": "FCS_cross_check",
@@ -1444,6 +1482,15 @@ class FcsITGuiCommands:
             raise CommandError(f"Unknown parameters: {', '.join(unknown)}")
         for name, value in arguments.items():
             self.dpg.set_value(tags[name], value)
+
+    @staticmethod
+    def _validate_cbb_block_length(arguments: dict[str, Any]) -> None:
+        """Validate the optional CBB block-length widget value."""
+        if "cbb_block_length" not in arguments:
+            return
+        value = arguments["cbb_block_length"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise CommandError("cbb_block_length must be an integer of at least 1.")
 
     def _read_values(self, tags: dict[str, str]) -> dict[str, Any]:
         """Support internal read values processing without changing public API."""

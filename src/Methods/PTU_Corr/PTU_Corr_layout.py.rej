@@ -1,0 +1,22 @@
+--- src/Methods/PTU_Corr/PTU_Corr_layout.py
++++ src/Methods/PTU_Corr/PTU_Corr_layout.py
+@@ -126,13 +126,17 @@
+                             width = method_init.left_panel_drag_time_binning['width'],
+                             default_value=method_init.left_panel_drag_time_binning['default_time_bin'],
+                             step=0,
+-                            format='Time bin = %.E [s]',
++                            format='Display time bin = %.E [s]',
+                             callback = method_cmn.callback_left_panel_drag_time_binning,
+                             min_value = 1e-5,
+                             on_enter=True
+                             )
+     with dpg.tooltip('left_panel_drag_time_binning',tag='left_panel_drag_time_binning_tooltip'):
+-        dpg.add_text('Set bin value for displayed time trace data.',tag='left_panel_drag_time_binning_tooltip_text')
++        dpg.add_text(
++            'Set the bin width used only for the displayed time trace. '
++            'This value does not affect TTTR correlation.',
++            tag='left_panel_drag_time_binning_tooltip_text'
++        )
+ 
+ with dpg.window(label='',
+                 width=method_init.Anal_window['width'],
