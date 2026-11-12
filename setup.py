@@ -1,9 +1,23 @@
+# Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
+#
+# This file is part of the FcsIT repository.
+#
+# This file is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or any later version.
+#
+# This file is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this file. If not, see <https://www.gnu.org/licenses/>.
+
 import os
 import re
-import shutil
 import subprocess
 import sys
-import sysconfig
 from pathlib import Path
 
 from setuptools import Command, find_packages, setup
@@ -50,87 +64,8 @@ def read_requirements(path):
     ]
 
 
-def find_jupyter_book_executable():
-    """Locate the Jupyter Book executable belonging to this Python runtime."""
-    executable_name = "jupyter-book.exe" if os.name == "nt" else "jupyter-book"
-    candidates = [
-        Path(sysconfig.get_path("scripts")) / executable_name,
-        Path(sys.executable).resolve().parent / executable_name,
-    ]
-    discovered = shutil.which("jupyter-book")
-    if discovered:
-        candidates.append(Path(discovered))
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise RuntimeError(
-        "Jupyter Book is not installed for the active Python environment."
-    )
-
-
-def prepare_jupyter_book_environment():
-    """Prepare the Node.js runtime required by Jupyter Book 2."""
-    environment = os.environ.copy()
-    environment["BASE_URL"] = ""
-    environment["JB_ALLOW_NODEENV"] = "yes"
-
-    if shutil.which("node", path=environment.get("PATH")) and shutil.which(
-        "npm", path=environment.get("PATH")
-    ):
-        return environment
-
-    try:
-        from jupyter_book.__main__ import NODEENV_VERSION
-        from jupyter_book.nodeenv import create_nodeenv, find_nodeenv_path
-    except ImportError as error:
-        raise RuntimeError(
-            "Jupyter Book is not installed for the active Python environment."
-        ) from error
-
-    nodeenv_path = Path(find_nodeenv_path(NODEENV_VERSION))
-    runtime_dir = nodeenv_path / ("Scripts" if os.name == "nt" else "bin")
-    node_name = "node.exe" if os.name == "nt" else "node"
-    npm_names = ("npm.cmd", "npm.exe", "npm") if os.name == "nt" else ("npm",)
-    runtime_complete = (runtime_dir / node_name).is_file() and any(
-        (runtime_dir / name).exists() for name in npm_names
-    )
-    if not runtime_complete:
-        shutil.rmtree(nodeenv_path, ignore_errors=True)
-        print(f"Installing the Jupyter Book Node.js runtime in {nodeenv_path}")
-        create_nodeenv(nodeenv_path, NODEENV_VERSION)
-
-    environment["PATH"] = os.pathsep.join(
-        [str(runtime_dir), environment.get("PATH", os.defpath)]
-    )
-    return environment
-
-
-def replace_directory(source, target):
-    """Atomically replace a directory while retaining rollback on failure."""
-    source = Path(source)
-    target = Path(target)
-    staging = target.with_name(f".{target.name}.staging")
-    backup = target.with_name(f".{target.name}.backup")
-    shutil.rmtree(staging, ignore_errors=True)
-    shutil.rmtree(backup, ignore_errors=True)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, staging)
-
-    if target.exists():
-        target.rename(backup)
-    try:
-        staging.rename(target)
-    except Exception:
-        if backup.exists() and not target.exists():
-            backup.rename(target)
-        raise
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-    shutil.rmtree(backup, ignore_errors=True)
-
-
 class BuildDocs(Command):
-    """Build the local Jupyter Book and install its HTML assets."""
+    """Compatibility wrapper for the standalone documentation builder."""
 
     description = "build and install the bundled HTML documentation"
     user_options = [
@@ -155,29 +90,21 @@ class BuildDocs(Command):
         )
 
     def run(self):
-        source_dir = Path(self.source_dir)
-        target_dir = Path(self.target_dir)
-        build_root = source_dir / "_build"
-        html_dir = build_root / "html"
-        if not (source_dir / "myst.yml").is_file():
-            raise RuntimeError(
-                f"Jupyter Book configuration not found in {source_dir}."
-            )
-
-        shutil.rmtree(build_root, ignore_errors=True)
+        builder = ROOT_DIR / "src" / "include" / "documentation_builder.py"
+        if not builder.is_file():
+            raise RuntimeError(f"Documentation builder not found: {builder}")
         subprocess.run(
-            [str(find_jupyter_book_executable()), "build", "--html"],
-            cwd=source_dir,
-            env=prepare_jupyter_book_environment(),
+            [
+                sys.executable,
+                str(builder),
+                "--source",
+                self.source_dir,
+                "--target",
+                self.target_dir,
+            ],
+            cwd=ROOT_DIR,
             check=True,
         )
-        if not (html_dir / "index.html").is_file():
-            raise RuntimeError(
-                f"Jupyter Book did not create {html_dir / 'index.html'}."
-            )
-        replace_directory(html_dir, target_dir)
-        shutil.rmtree(build_root, ignore_errors=True)
-        print(f"Installed documentation: {target_dir}")
 
 win_packages = ['pywin32']
 basic_packages = [
