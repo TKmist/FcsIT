@@ -143,7 +143,7 @@ class _PTU_Corr_init:
                                        'width':self.internal_width_left_panel/2}
         
         self.left_panel_drag_time_binning = {'name':'left_panel_drag_time_binning',
-                                             'width':int(150*self.size_ratio['width']),
+                                             'width':int(230*self.size_ratio['width']),
                                              'default_time_bin':np.round(1.0e-3,3)}
         self.left_panel_drag_subs = {'name':'left_panel_drag_subs',
                                      'width':-1,

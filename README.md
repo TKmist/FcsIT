@@ -38,9 +38,15 @@ It provides:
 - Reading the TTTR data,    
 - TCSPC-based filtering,    
 - Correlation of the TTTR data,    
-- The calculation of the correlation data and its variance is based on the circular-block bootstrap method,    
+- Bootstrap standard errors of mean correlation curves, using the ordinary non-parametric bootstrap for `L=1` and the circular-block bootstrap for `L>1`,
+- Empirical cross-lag covariance stored in new `.corr` files and used for post-hoc sandwich uncertainties of fitted parameters when sufficiently supported,
+- Selectable `average` and `first` multi-tau compression for Time-binned correlation,
 - Nine predefined mathematical models for fitting FCS data,    
-- Flexibility and user-friendlyness in adding user-defined models.
+- A local TCP/JSON interface for reproducible scripted workflows,
+- Flexibility and user-friendly tools for adding user-defined models.
+
+
+The software was developed and tested on PTU files created with the PicoHarp 300 TTTR system (PicoQuant, Germany). Further development to include other file formats is possible depending on the data availability. If you think this program might be useful for your studies but your files are not yet supported, feel free to contact the [author](mailto:tkalwarczyk@ichf.edu.pl).
 
 ## Installation
 On Linux machines, it is highly recommended to install Python 3.11 or 3.12. The Windows installation files are distributed together with the Python Embedded Distribution for Windows. Follow the steps below to install the software.    
@@ -61,13 +67,13 @@ The installation script will download all required packages, create the run_FcsI
 ## Release notes
 
 #### V2.0.2
- - Added explicit CBB block-length and segment-count controls to PTU/PT3 and Time-binned correlation, including valid-range enforcement.
- - Added `average`/`first` multi-tau compression selection and bin-aware minimum-lag validation for Time-binned correlation.
+ - Added explicit bootstrap block-length and segment-count controls to PTU/PT3 and Time-binned correlation, including valid-range enforcement. `L=1` selects the ordinary non-parametric bootstrap; `L>1` selects circular-block resampling of consecutive segments.
+ - Added `average`/`first` multi-tau compression selection, bin-aware minimum-lag validation, and data-driven lag-grid limits for Time-binned correlation.
  - Separated PTU display binning from correlation settings and improved large-trace display, memory-error recovery, action-state restoration, and duplicate-run prevention.
  - Added persistent `runtime_log.txt` diagnostics for Python exceptions and fatal errors.
- - Hardened fitting weights, fitted-range and residual handling, brightness restoration, stored-result synchronisation, and aggregate brightness, reduced-chi-square, and p-value statistics.
- - Updated correlation terminology and the PTU/PT3 and Time-binned interface documentation.
- - Extended TCP/JSON parameter control and state reporting for CBB block length and Time-binned multi-tau compression.
+ - Fixed fitting with missing, zero, or non-finite errors, fitted-range and residual handling, brightness restoration, stored-result synchronisation, and aggregate brightness, reduced-chi-square, and p-value statistics.
+ - Updated terminology from chunks to segments and documented the V2.0.2 bootstrap block-length, multi-tau compression, data-driven lag, and TCP/JSON controls.
+ - Extended TCP/JSON parameter control and state reporting for bootstrap block length and Time-binned multi-tau compression; long-running commands wait for completion without a response timeout.
 
 #### V2.0.1
  - Fixed the **Calculate filter** button callback and ensured that TCSPC filtering is executed when enabled.
