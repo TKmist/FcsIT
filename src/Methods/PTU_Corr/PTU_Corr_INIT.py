@@ -2847,6 +2847,21 @@ class _PTU_Corr_common:
         self.META_data['TCSPC info']=self.TCSPC_snapshot()
         
         
+    @staticmethod
+    def _read_saved_npoints(tt_info):
+        """Read the current point-count key with legacy PTU fallbacks."""
+        if 'Npoints' in tt_info:
+            return tt_info['Npoints']
+        if 'Nsubs' in tt_info:
+            return tt_info['Nsubs']
+        return tt_info.get('Nsub')
+
+    @staticmethod
+    def _calculate_points_per_decade(npoints, tau_min, tau_max):
+        """Return the effective PTU correlator density for the lag range."""
+        decades = max(1.0, (np.log10(tau_max) - np.log10(tau_min)))
+        return max(1, int(np.floor(npoints / decades)))
+
     def Correlating(self,sender):
         # t0 = time.perf_counter()
         is_Two_channel = len(self.channels) == 2
@@ -2855,9 +2870,7 @@ class _PTU_Corr_common:
         block_size = int(dpg.get_value('left_panel_drag_block_length'))
         tau_min = self.round_data(dpg.get_value('left_panel_tau_min'))
         tau_max = dpg.get_value('left_panel_tau_max')
-        decades = max(1.0, (np.log10(tau_max) - np.log10(tau_min)))
-        nsub = int(np.floor(npoints / decades))
-        nsub = max(1, nsub)
+        nsub = self._calculate_points_per_decade(npoints, tau_min, tau_max)
         chunks = list(self.META_data['TT info']['chunks'].keys())
         # t_setup = time.perf_counter() - t0
 
@@ -3072,7 +3085,7 @@ class _PTU_Corr_common:
     def callback_calc_fltr_all(self,sender,app_data):
         filterscheck={'TG':dpg.get_value('TCSPC_timegate_check'),
                      'BG':dpg.get_value('TCSPC_BG_correction_check'),
-                     'Nsubs':dpg.get_value('left_panel_drag_subs'),
+                     'Npoints':dpg.get_value('left_panel_drag_subs'),
                      'Nchunks':dpg.get_value('left_panel_N_chunks'),
                      'BlockLength':dpg.get_value('left_panel_drag_block_length')}
         button = 'Calculate_filter_all_button'
@@ -3096,7 +3109,7 @@ class _PTU_Corr_common:
                     'TCSPC_BG_correction_check',
                     dpg.get_value('TCSPC_BG_correction_check')
                 )
-                dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
+                dpg.set_value('left_panel_drag_subs',filterscheck['Npoints'])
                 dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
                 dpg.set_value(
                     'left_panel_drag_block_length',
@@ -3180,7 +3193,7 @@ class _PTU_Corr_common:
 
 
     def callback_calc_corr_all(self,sender,app_data):
-        filterscheck={'Nsubs':dpg.get_value('left_panel_drag_subs'),
+        filterscheck={'Npoints':dpg.get_value('left_panel_drag_subs'),
                      'Nchunks':dpg.get_value('left_panel_N_chunks'),
                      'BlockLength':dpg.get_value('left_panel_drag_block_length')}
         inc_f=self.check_if_all_filters_exists()
@@ -3206,7 +3219,7 @@ class _PTU_Corr_common:
                         self.mnt_bttns_FCS()
                     except:
                         pass
-                    dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
+                    dpg.set_value('left_panel_drag_subs',filterscheck['Npoints'])
                     dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
                     dpg.set_value(
                         'left_panel_drag_block_length',
@@ -3318,14 +3331,22 @@ class _PTU_Corr_common:
 
     def TT_snapshot(self):
         tbin = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
-        nsubs = dpg.get_value('left_panel_drag_subs')
+        npoints = dpg.get_value('left_panel_drag_subs')
+        tau_min = self.round_data(dpg.get_value('left_panel_tau_min'))
+        tau_max = dpg.get_value('left_panel_tau_max')
+        points_per_decade = self._calculate_points_per_decade(
+            npoints,
+            tau_min,
+            tau_max,
+        )
         nchunks = dpg.get_value('left_panel_N_chunks')
         block_length = int(dpg.get_value('left_panel_drag_block_length'))
         custom_chunk = dpg.get_value('Custom_chunks_check')
         chunks = self.chunks
         self.fcs_data.count_rate = self.fcs_data.calculate_count_rate(self.fcs_data.PHOTONS,self.fcs_data.timetrace,self.fcs_data.time_bin)
         output ={'Time_bin':tbin,
-                 'Nsubs':nsubs,
+                 'Npoints':npoints,
+                 'PointsPerDecade':points_per_decade,
                  'nchunks':nchunks,
                  'cbb_block_length':block_length,
                  'custom_chunk':custom_chunk,
@@ -3414,7 +3435,7 @@ class _PTU_Corr_common:
     
         tt = pkl.get('TT info', {})
         tbin         = tt.get('Time_bin')
-        nsubs        = tt.get('Nsubs')
+        npoints      = self._read_saved_npoints(tt)
         nchunks_pkl  = tt.get('nchunks')
         block_length = tt.get('cbb_block_length')
         custom_chunk = tt.get('custom_chunk')
@@ -3422,8 +3443,8 @@ class _PTU_Corr_common:
     
         if tbin is not None:
             dpg.set_value('left_panel_drag_time_binning', tbin)
-        if nsubs is not None:
-            dpg.set_value('left_panel_drag_subs', nsubs)
+        if npoints is not None:
+            dpg.set_value('left_panel_drag_subs', npoints)
         if nchunks_pkl is not None:
             dpg.set_value('left_panel_N_chunks', int(nchunks_pkl))
         if block_length is not None:
