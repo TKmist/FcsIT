@@ -163,9 +163,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Upgrade pip in the virtual environment
-echo "Upgrading pip in the virtual environment..."
+# Upgrade pip in the target environment.
+echo "Upgrading pip in the FcsIT environment..."
 python -m pip install --upgrade pip
+if [ $? -ne 0 ]; then
+    echo "Failed to upgrade pip. Exiting."
+    deactivate
+    exit 1
+fi
 
 # Install the package and dependencies using pip
 echo "Installing dependencies using pip..."
@@ -178,7 +183,9 @@ fi
 
 # Build the bundled manual into the directory used by FcsIT.
 echo "Building local documentation..."
-python setup.py build_docs
+python src/include/documentation_builder.py \
+    --source docs \
+    --target src/doc/assets/help_html
 if [ $? -ne 0 ]; then
     echo "Failed to build local documentation. Exiting."
     deactivate

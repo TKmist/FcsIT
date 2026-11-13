@@ -1,20 +1,18 @@
-"""
-Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
-
-This file is part of the FcsIT repository.
-
-This file is free software: you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation, either version 3 of the License, or any later version.
-
-This file is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-for more details.
-
-You should have received a copy of the GNU General Public License
-along with this file. If not, see <https://www.gnu.org/licenses/>.
-"""
+# Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
+#
+# This file is part of the FcsIT repository.
+#
+# This file is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or any later version.
+#
+# This file is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this file. If not, see <https://www.gnu.org/licenses/>.
 
 import dearpygui.dearpygui as dpg
 import os
@@ -23,6 +21,7 @@ import pandas as pd
 from numpy import log10,sqrt
 import multipletau as mtau
 from include.fcsutils import load_fcs
+from include.runtime_logging import log_exception
 from pathlib import Path
 import pickle
 import time
@@ -142,15 +141,20 @@ class _PTU_Corr_init:
                                        'width':self.internal_width_left_panel/2}
         
         self.left_panel_drag_time_binning = {'name':'left_panel_drag_time_binning',
-                                             'width':-1,
+                                             'width':int(230*self.size_ratio['width']),
                                              'default_time_bin':np.round(1.0e-3,3)}
         self.left_panel_drag_subs = {'name':'left_panel_drag_subs',
                                      'width':-1,
                                      'default_value':100,
                                      'speed':2}
+        self.left_panel_drag_block_length = {'name':'left_panel_drag_block_length',
+                                     'width':-1,
+                                     'default_value':1,
+                                     'speed':1}
+        
         self.left_panel_N_chunks = {'name':'left_panel_N_chunks',
                                     'width':-1,
-                                    'default_value':30,
+                                    'default_value':18,
                                     'speed':1}
         self.Custom_chunks_check = {'name':'Custom_chunks_check',
                                     'default_value':False}
@@ -321,20 +325,34 @@ class _PTU_Corr_common:
         tfile = os.path.join(cwd,self.basf.TIMING_FILE)
         @wraps(func)
         def wrapper(sender, app_data, *args, **kwargs):
-            if not enabled:
+            button_state = self._capture_action_button_state()
+            start = time.perf_counter() if enabled else None
+            try:
                 return func(sender, app_data, *args, **kwargs)
-            start = time.perf_counter()
-            result = func(sender, app_data, *args, **kwargs)
-            duration = time.perf_counter() - start
-            hostname = socket.gethostname()
-            log_entry = (
-                f"{datetime.now().isoformat()} | {hostname} | "
-                f"{func.__qualname__} | file: {self.anal_file} |{duration:.6f}s\n"
-            )
-            with open(tfile, "a", encoding="utf-8") as f:
-                f.write(log_entry)
-            print(f"[{hostname}] {func.__qualname__} took {duration:.4f}s")
-            return result
+            except MemoryError as exc:
+                log_exception(f'MemoryError in {func.__qualname__}', exc)
+                self._restore_action_button_state(button_state)
+                self.show_error(
+                    'The operation was stopped because it would require too '
+                    'much memory. Button states were restored. See '
+                    'runtime_log.txt for details.'
+                )
+                return None
+            finally:
+                if enabled and start is not None:
+                    duration = time.perf_counter() - start
+                    hostname = socket.gethostname()
+                    log_entry = (
+                        f"{datetime.now().isoformat()} | {hostname} | "
+                        f"{func.__qualname__} | file: {self.anal_file} |"
+                        f"{duration:.6f}s\n"
+                    )
+                    with open(tfile, "a", encoding="utf-8") as f:
+                        f.write(log_entry)
+                    print(
+                        f"[{hostname}] {func.__qualname__} took "
+                        f"{duration:.4f}s"
+                    )
 
         return wrapper
         
@@ -402,6 +420,8 @@ class _PTU_Corr_common:
         # jedna, wspólna ścieżka “commit”
         self.META_data['TT info'] = self.TT_snapshot()
         # if dpg.get_value('Custom_chunks_check'):
+        self.callback_block_length('left_panel_drag_block_length',dpg.get_value('left_panel_drag_block_length'))
+
         self.calculate_shade()
         self.plot_TT()
 
@@ -988,11 +1008,27 @@ class _PTU_Corr_common:
         if app_data>1e-1:
             app_data=1e-1
             dpg.set_value(sender,app_data)
+        previous_time_bin = self.fcs_data.time_bin
         self.fcs_data.time_bin = self.round_data(app_data)
-        self.fcs_data.timetrace = self.fcs_data.bin_time_data(self.fcs_data.PHOTONS,
-                                                              self.fcs_data.time_bin,
-                                                              self.fcs_data.occurence)
+        try:
+            self.fcs_data.timetrace = self.fcs_data.bin_time_data(
+                self.fcs_data.PHOTONS,
+                self.fcs_data.time_bin,
+                self.fcs_data.occurence,
+            )
+        except MemoryError as exc:
+            log_exception('MemoryError while generating the PTU time trace', exc)
+            self.fcs_data.time_bin = previous_time_bin
+            dpg.set_value(sender, previous_time_bin)
+            self.show_error(
+                'The requested display time bin requires too much memory. '
+                'The previous value was restored. See runtime_log.txt for details.'
+            )
+            return
+        dpg.set_value(sender, self.fcs_data.time_bin)
         self.fcs_data.count_rate = self.fcs_data.calculate_count_rate(self.fcs_data.PHOTONS,self.fcs_data.timetrace,self.fcs_data.time_bin)
+        if self.fcs_data.time_bin_adjustment_message:
+            self.show_error(self.fcs_data.time_bin_adjustment_message)
         ylabel = self.stringer(dpg.get_value('left_panel_drag_time_binning'))
         dpg.configure_item('TT_y1',label=ylabel)
         dpg.configure_item('TT_y2',label=ylabel)
@@ -1035,6 +1071,9 @@ class _PTU_Corr_common:
         dpg.set_value('Custom_chunks_check',self.method_init.Custom_chunks_check['default_value'])
         
         self.fcs_data = load_fcs(file,time_bin)
+        dpg.set_value('left_panel_drag_time_binning', self.fcs_data.time_bin)
+        if self.fcs_data.time_bin_adjustment_message:
+            self.show_error(self.fcs_data.time_bin_adjustment_message)
         self.channels = self.fcs_data.timetrace.keys()
         
         if len(self.channels) == 1:
@@ -1561,12 +1600,18 @@ class _PTU_Corr_common:
             self.TT_subplots['row_ratios'] = [1.00]
             dpg.configure_item('TT_subplots',rows = self.TT_subplots['rows'],row_ratios = self.TT_subplots['row_ratios'])
             dpg.hide_item('plot_2')
-            tt_plot_data_X_1 = self.TT_xdata_1
-            tt_plot_data_Y_1 = self.TT_ydata_1
+            tt_plot_data_X_1, tt_plot_data_Y_1 = self._limit_plot_points(
+                self.TT_xdata_1, self.TT_ydata_1
+            )
+            shade_x_1, shade_y1_1, shade_y2_1 = self._limit_plot_points(
+                *self.shade_data_1
+            )
             dpg.set_value('TT_plot1',[tt_plot_data_X_1,tt_plot_data_Y_1])
             self.TT_x_axis_limits_1 = [self.TT_xdata_1.min(),self.TT_xdata_1.max()]
             self.TT_y_axis_limits_1 = [self.TT_ydata_1.min(),self.TT_ydata_1.max()]
-            dpg.configure_item('TT_shade1',x = self.shade_data_1[0], y1= self.shade_data_1[1],y2 = self.shade_data_1[2])
+            dpg.configure_item(
+                'TT_shade1', x=shade_x_1, y1=shade_y1_1, y2=shade_y2_1
+            )
             dpg.set_axis_limits('TT_x1',self.TT_x_axis_limits_1[0],self.TT_x_axis_limits_1[1])
             dpg.set_axis_limits('TT_y1',self.TT_y_axis_limits_1[0],self.TT_y_axis_limits_1[1])
             
@@ -1575,10 +1620,18 @@ class _PTU_Corr_common:
             self.TT_subplots['row_ratios'] = [0.50,0.50]
             dpg.configure_item('TT_subplots',rows = self.TT_subplots['rows'],row_ratios = self.TT_subplots['row_ratios'])
             dpg.show_item('plot_2')
-            tt_plot_data_X_1 = self.TT_xdata_1
-            tt_plot_data_Y_1 = self.TT_ydata_1
-            tt_plot_data_X_2 = self.TT_xdata_2
-            tt_plot_data_Y_2 = self.TT_ydata_2
+            tt_plot_data_X_1, tt_plot_data_Y_1 = self._limit_plot_points(
+                self.TT_xdata_1, self.TT_ydata_1
+            )
+            tt_plot_data_X_2, tt_plot_data_Y_2 = self._limit_plot_points(
+                self.TT_xdata_2, self.TT_ydata_2
+            )
+            shade_x_1, shade_y1_1, shade_y2_1 = self._limit_plot_points(
+                *self.shade_data_1
+            )
+            shade_x_2, shade_y1_2, shade_y2_2 = self._limit_plot_points(
+                *self.shade_data_2
+            )
             dpg.set_value('TT_plot1',[tt_plot_data_X_1,tt_plot_data_Y_1])
             dpg.set_value('TT_plot2',[tt_plot_data_X_2,tt_plot_data_Y_2])
             self.TT_x_axis_limits_1 = [self.TT_xdata_1.min(),self.TT_xdata_1.max()]
@@ -1589,8 +1642,27 @@ class _PTU_Corr_common:
             self.TT_y_axis_limits_2 = [self.TT_ydata_2.min(),self.TT_ydata_2.max()]
             dpg.set_axis_limits('TT_x2',self.TT_x_axis_limits_2[0],self.TT_x_axis_limits_2[1])
             dpg.set_axis_limits('TT_y2',self.TT_y_axis_limits_2[0],self.TT_y_axis_limits_2[1])
-            dpg.configure_item('TT_shade1',x = self.shade_data_1[0], y1= self.shade_data_1[1],y2 = self.shade_data_1[2])
-            dpg.configure_item('TT_shade2',x = self.shade_data_2[0], y1= self.shade_data_2[1],y2 = self.shade_data_2[2])
+            dpg.configure_item(
+                'TT_shade1', x=shade_x_1, y1=shade_y1_1, y2=shade_y2_1
+            )
+            dpg.configure_item(
+                'TT_shade2', x=shade_x_2, y1=shade_y1_2, y2=shade_y2_2
+            )
+
+    @staticmethod
+    def _limit_plot_points(*arrays, maximum_points=100_000):
+        """Return aligned arrays sampled to a safe size for DearPyGui."""
+        if not arrays:
+            return tuple()
+        number_of_points = len(arrays[0])
+        if any(len(array) != number_of_points for array in arrays):
+            raise ValueError('Time-trace plot arrays must have equal lengths.')
+        if number_of_points <= maximum_points:
+            return tuple(np.asarray(array) for array in arrays)
+        indices = np.linspace(
+            0, number_of_points - 1, maximum_points, dtype=np.int64
+        )
+        return tuple(np.asarray(array)[indices] for array in arrays)
         
     def plot_TCSPC(self,bglvl):   
         is_bg = dpg.get_value('TCSPC_BG_correction_check')
@@ -2775,21 +2847,44 @@ class _PTU_Corr_common:
         self.META_data['TCSPC info']=self.TCSPC_snapshot()
         
         
+    @staticmethod
+    def _read_saved_npoints(tt_info):
+        """Read the current point-count key with legacy PTU fallbacks."""
+        if 'Npoints' in tt_info:
+            return tt_info['Npoints']
+        if 'Nsubs' in tt_info:
+            return tt_info['Nsubs']
+        return tt_info.get('Nsub')
+
+    @staticmethod
+    def _calculate_points_per_decade(npoints, tau_min, tau_max):
+        """Return the effective PTU correlator density for the lag range."""
+        decades = max(1.0, (np.log10(tau_max) - np.log10(tau_min)))
+        return max(1, int(np.floor(npoints / decades)))
+
     def Correlating(self,sender):
         # t0 = time.perf_counter()
         is_Two_channel = len(self.channels) == 2
         bintime = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
         npoints = dpg.get_value('left_panel_drag_subs')
+        block_size = int(dpg.get_value('left_panel_drag_block_length'))
         tau_min = self.round_data(dpg.get_value('left_panel_tau_min'))
         tau_max = dpg.get_value('left_panel_tau_max')
-        decades = max(1.0, (np.log10(tau_max) - np.log10(tau_min)))
-        nsub = int(np.floor(npoints / decades))
-        nsub = max(1, nsub)
+        nsub = self._calculate_points_per_decade(npoints, tau_min, tau_max)
         chunks = list(self.META_data['TT info']['chunks'].keys())
         # t_setup = time.perf_counter() - t0
 
         # t0 = time.perf_counter()
-        self.autoNorm_ch_1,self.autoNorm_ch_2,self.CrossNorm_ch_1,self.CrossNorm_ch_2,self.DictOfChunks =self.fcs_data._CORRELATE(chunks,nsub,npoints,tau_min,tau_max,self.META_data,sender)
+        (
+            self.autoNorm_ch_1,
+            self.autoNorm_ch_2,
+            self.CrossNorm_ch_1,
+            self.CrossNorm_ch_2,
+            self.DictOfChunks,
+        ) = self.fcs_data._CORRELATE(
+            chunks, nsub, npoints, tau_min, tau_max,
+            self.META_data, sender, block_size=block_size,
+        )
         # t_core = time.perf_counter() - t0
 
             
@@ -2959,34 +3054,85 @@ class _PTU_Corr_common:
             else:
                 dpg.disable_item(item)
 
+    def _capture_action_button_state(self):
+        """Capture labels and enabled states for recoverable operations."""
+        state = {}
+        for item in self.TCSPC_BUTTONS + self.FCS_BUTTONS:
+            if dpg.does_item_exist(item):
+                state[item] = {
+                    'enabled': bool(dpg.is_item_enabled(item)),
+                    'label': dpg.get_item_label(item),
+                    'theme': dpg.get_item_theme(item),
+                }
+        return state
+
+    def _restore_action_button_state(self, state):
+        """Restore action buttons after an interrupted operation."""
+        for item, item_state in state.items():
+            if not dpg.does_item_exist(item):
+                continue
+            dpg.set_item_label(item, item_state['label'])
+            if item_state['theme']:
+                dpg.bind_item_theme(item, item_state['theme'])
+            if item_state['enabled']:
+                dpg.enable_item(item)
+            else:
+                dpg.disable_item(item)
+
 
 
     
     def callback_calc_fltr_all(self,sender,app_data):
         filterscheck={'TG':dpg.get_value('TCSPC_timegate_check'),
                      'BG':dpg.get_value('TCSPC_BG_correction_check'),
-                     'Nsubs':dpg.get_value('left_panel_drag_subs'),
-                     'Nchunks':dpg.get_value('left_panel_N_chunks')}
-        old_button_label = dpg.get_item_label('Calculate_filter_all_button')
-        dpg.bind_item_theme('Calculate_filter_all_button', "fit_button_theme_busy")
-        for i,file in enumerate(self.files):
-            self.status_label_N = ' File '+str(i+1)+'/'+str(len(self.files))
-            self.status_label = self.status_label_0+self.status_label_N
-            self._set_butt_label('Calculate_filter_all_button')
-            self.anal_file=file
-            dpg.set_value('file_box',self.anal_file)
-            self.callback_listbox('file_box',self.anal_file)
-            dpg.set_value('TCSPC_timegate_check',filterscheck['TG'])
-            self.callback_tcspc_timegate('TCSPC_timegate_check',dpg.get_value('TCSPC_timegate_check')) 
-            dpg.set_value('TCSPC_BG_correction_check',filterscheck['BG'])
-            self.callback_tcspc_BG('TCSPC_BG_correction_check',dpg.get_value('TCSPC_BG_correction_check'))
-            dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
-            dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
-            self.on_chunks_released()
-            self.TCSPC_filtering('Calculate_filter_all_button',sender=sender)
-            self._PCKL_DATA()
-        dpg.bind_item_theme('Calculate_filter_all_button', "fit_button_theme")
-        dpg.set_item_label('Calculate_filter_all_button',old_button_label)
+                     'Npoints':dpg.get_value('left_panel_drag_subs'),
+                     'Nchunks':dpg.get_value('left_panel_N_chunks'),
+                     'BlockLength':dpg.get_value('left_panel_drag_block_length')}
+        button = 'Calculate_filter_all_button'
+        button_state = self._capture_action_button_state()
+        dpg.bind_item_theme(button, "fit_button_theme_busy")
+        try:
+            for i,file in enumerate(self.files):
+                self.status_label_N = ' File '+str(i+1)+'/'+str(len(self.files))
+                self.status_label = self.status_label_0+self.status_label_N
+                self._set_butt_label(button)
+                self.anal_file=file
+                dpg.set_value('file_box',self.anal_file)
+                self.callback_listbox('file_box',self.anal_file)
+                dpg.set_value('TCSPC_timegate_check',filterscheck['TG'])
+                self.callback_tcspc_timegate(
+                    'TCSPC_timegate_check',
+                    dpg.get_value('TCSPC_timegate_check')
+                )
+                dpg.set_value('TCSPC_BG_correction_check',filterscheck['BG'])
+                self.callback_tcspc_BG(
+                    'TCSPC_BG_correction_check',
+                    dpg.get_value('TCSPC_BG_correction_check')
+                )
+                dpg.set_value('left_panel_drag_subs',filterscheck['Npoints'])
+                dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
+                dpg.set_value(
+                    'left_panel_drag_block_length',
+                    filterscheck['BlockLength'],
+                )
+                self.callback_block_length(
+                    'left_panel_drag_block_length',
+                    filterscheck['BlockLength'],
+                )
+                self.on_chunks_released()
+                self.TCSPC_filtering(button,sender=sender)
+                self._PCKL_DATA()
+        except MemoryError as exc:
+            log_exception('MemoryError during batch filter calculation', exc)
+            self.show_error(
+                'Batch filter calculation was stopped because it would require '
+                'too much memory. See runtime_log.txt for details.'
+            )
+        except Exception as exc:
+            log_exception('Batch filter calculation failed', exc)
+            self.show_error(f'Batch filter calculation failed:\\n{exc}')
+        finally:
+            self._restore_action_button_state(button_state)
 
     def _set_butt_label(self,butt):
         dpg.set_item_label(butt,self.status_label)
@@ -3012,49 +3158,108 @@ class _PTU_Corr_common:
             
 
     def callback_calc_corr_one(self,sender,app_data):
+        button = 'Calculate_correlation_once_button'
+        if getattr(self, '_correlation_once_running', False):
+            return
         if self.check_if_filters_exists():
-            old_button_label = dpg.get_item_label('Calculate_correlation_once_button')
-            dpg.bind_item_theme('Calculate_correlation_once_button', "fit_button_theme_busy")
+            button_state = self._capture_action_button_state()
+            self._correlation_once_running = True
+            dpg.disable_item(button)
+            dpg.bind_item_theme(button, "fit_button_theme_busy")
             self.status_label = 'Correlating'
-            self._set_butt_label('Calculate_correlation_once_button')
-            self.Correlating(sender)
-            self.plot_FCS()
-            self._PCKL_DATA()
-            dpg.bind_item_theme('Calculate_correlation_once_button', "fit_button_theme")
-            dpg.set_item_label('Calculate_correlation_once_button',old_button_label)
+            self._set_butt_label(button)
+            try:
+                self.Correlating(sender)
+                self.plot_FCS()
+                self._PCKL_DATA()
+            except MemoryError as exc:
+                log_exception('MemoryError during single-file correlation', exc)
+                self.show_error(
+                    'Correlation was stopped because it would require too much '
+                    'memory. See runtime_log.txt for details.'
+                )
+            except Exception as exc:
+                log_exception('Single-file correlation failed', exc)
+                self.show_error(f'Correlation calculation failed:\\n{exc}')
+            finally:
+                try:
+                    if dpg.does_item_exist(button):
+                        self._restore_action_button_state(button_state)
+                finally:
+                    self._correlation_once_running = False
             
         else:
             self.show_error('Please calculate TCSPC filters first!')
 
 
     def callback_calc_corr_all(self,sender,app_data):
-        filterscheck={'Nsubs':dpg.get_value('left_panel_drag_subs'),
-                     'Nchunks':dpg.get_value('left_panel_N_chunks')}
+        filterscheck={'Npoints':dpg.get_value('left_panel_drag_subs'),
+                     'Nchunks':dpg.get_value('left_panel_N_chunks'),
+                     'BlockLength':dpg.get_value('left_panel_drag_block_length')}
         inc_f=self.check_if_all_filters_exists()
         if len(inc_f) == 0:
-            old_button_label = dpg.get_item_label('Calculate_correlation_all_button')
-            dpg.bind_item_theme('Calculate_correlation_all_button', "fit_button_theme_busy")
-            for i,file in enumerate(self.files):
-                self.status_label_N = ' file '+str(i+1)+'/'+str(len(self.files))
-                self.status_label = 'Correlating '+self.status_label_N
-                self._set_butt_label('Calculate_correlation_all_button')
-                self.anal_file=file
-                dpg.set_value('file_box',self.anal_file)
-                self.callback_listbox('file_box',self.anal_file)
-                try: 
+            button = 'Calculate_correlation_all_button'
+            old_button_label = dpg.get_item_label(button)
+            button_state = self._capture_action_button_state()
+            operation_failed = False
+            selected_tab = dpg.get_item_alias(
+                dpg.get_value('Anal_window_tab_bar')
+            )
+            dpg.bind_item_theme(button, "fit_button_theme_busy")
+            try:
+                for i,file in enumerate(self.files):
+                    self.status_label_N = ' file '+str(i+1)+'/'+str(len(self.files))
+                    self.status_label = 'Correlating '+self.status_label_N
+                    self._set_butt_label(button)
+                    self.anal_file=file
+                    dpg.set_value('file_box',self.anal_file)
+                    self.callback_listbox('file_box',self.anal_file)
+                    try:
+                        self.umnt_bttns_TCSPC()
+                        self.mnt_bttns_FCS()
+                    except:
+                        pass
+                    dpg.set_value('left_panel_drag_subs',filterscheck['Npoints'])
+                    dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
+                    dpg.set_value(
+                        'left_panel_drag_block_length',
+                        filterscheck['BlockLength'],
+                    )
+                    self.callback_block_length(
+                        'left_panel_drag_block_length',
+                        filterscheck['BlockLength'],
+                    )
+                    # self.add_chunks(reset=True)   # albo reset=False
+                    # self._after_chunks_changed()
+                    self.Correlating(sender)
+                    self.plot_FCS()
+                    self._PCKL_DATA()
+            except MemoryError as exc:
+                operation_failed = True
+                log_exception('MemoryError during batch correlation', exc)
+                self.show_error(
+                    'Batch correlation was stopped because it would require '
+                    'too much memory. See runtime_log.txt for details.'
+                )
+            except Exception as exc:
+                operation_failed = True
+                log_exception('Batch correlation failed', exc)
+                self.show_error(f'Batch correlation failed:\\n{exc}')
+            finally:
+                if selected_tab == 'Anal_window_Correlation_tab':
+                    self.switch_to_corr_tab()
+                    self._active_tab = 'Anal_window_Correlation_tab'
                     self.umnt_bttns_TCSPC()
                     self.mnt_bttns_FCS()
-                except:
-                    pass
-                dpg.set_value('left_panel_drag_subs',filterscheck['Nsubs'])
-                dpg.set_value('left_panel_N_chunks',filterscheck['Nchunks'])
-                # self.add_chunks(reset=True)   # albo reset=False
-                # self._after_chunks_changed()
-                self.Correlating(sender)
-                self.plot_FCS()
-                self._PCKL_DATA()
-            dpg.bind_item_theme('Calculate_correlation_all_button', "fit_button_theme")
-            dpg.set_item_label('Calculate_correlation_all_button',old_button_label)
+                elif selected_tab == 'Anal_window_TCSPC_tab':
+                    self.switch_to_tcspc_tab()
+                    self._active_tab = 'Anal_window_TCSPC_tab'
+                    self.umnt_bttns_FCS()
+                    self.mnt_bttns_TCSPC()
+                dpg.bind_item_theme(button, "fit_button_theme")
+                dpg.set_item_label(button,old_button_label)
+                if operation_failed:
+                    self._restore_action_button_state(button_state)
         else:
             self.show_error('Please calculate TCSPC filters first for the following files: \n'+"\n".join(inc_f))
     
@@ -3126,14 +3331,24 @@ class _PTU_Corr_common:
 
     def TT_snapshot(self):
         tbin = self.round_data(dpg.get_value('left_panel_drag_time_binning'))
-        nsubs = dpg.get_value('left_panel_drag_subs')
+        npoints = dpg.get_value('left_panel_drag_subs')
+        tau_min = self.round_data(dpg.get_value('left_panel_tau_min'))
+        tau_max = dpg.get_value('left_panel_tau_max')
+        points_per_decade = self._calculate_points_per_decade(
+            npoints,
+            tau_min,
+            tau_max,
+        )
         nchunks = dpg.get_value('left_panel_N_chunks')
+        block_length = int(dpg.get_value('left_panel_drag_block_length'))
         custom_chunk = dpg.get_value('Custom_chunks_check')
         chunks = self.chunks
         self.fcs_data.count_rate = self.fcs_data.calculate_count_rate(self.fcs_data.PHOTONS,self.fcs_data.timetrace,self.fcs_data.time_bin)
         output ={'Time_bin':tbin,
-                 'Nsubs':nsubs,
+                 'Npoints':npoints,
+                 'PointsPerDecade':points_per_decade,
                  'nchunks':nchunks,
+                 'cbb_block_length':block_length,
                  'custom_chunk':custom_chunk,
                  'chunks':chunks,
                  'chunk_rates':self.fcs_data.count_rate
@@ -3220,17 +3435,20 @@ class _PTU_Corr_common:
     
         tt = pkl.get('TT info', {})
         tbin         = tt.get('Time_bin')
-        nsubs        = tt.get('Nsubs')
+        npoints      = self._read_saved_npoints(tt)
         nchunks_pkl  = tt.get('nchunks')
+        block_length = tt.get('cbb_block_length')
         custom_chunk = tt.get('custom_chunk')
         chunks_pkl   = tt.get('chunks', {})
     
         if tbin is not None:
             dpg.set_value('left_panel_drag_time_binning', tbin)
-        if nsubs is not None:
-            dpg.set_value('left_panel_drag_subs', nsubs)
+        if npoints is not None:
+            dpg.set_value('left_panel_drag_subs', npoints)
         if nchunks_pkl is not None:
             dpg.set_value('left_panel_N_chunks', int(nchunks_pkl))
+        if block_length is not None:
+            dpg.set_value('left_panel_drag_block_length', int(block_length))
         if custom_chunk is not None:
             dpg.set_value('Custom_chunks_check', bool(custom_chunk))
     
@@ -3748,3 +3966,9 @@ class _PTU_Corr_common:
     def update_default_directory(self, last_directory):
         dpg.configure_item('file_dialog_id_PTU', default_path=last_directory)
         dpg.configure_item('file_dialog_save_correlated', default_path=last_directory)
+
+    def callback_block_length(self,sender,app_data):
+        M = dpg.get_value('left_panel_N_chunks')
+        Lmax = max(1,int(np.floor((M-1)/2)))
+        validated_length = min(max(int(app_data), 1), Lmax)
+        dpg.set_value('left_panel_drag_block_length', validated_length)

@@ -9,6 +9,7 @@ set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
 set "PIP_EXE=%PYTHON_DIR%\Scripts\pip.exe"
 set "GET_PIP=%PYTHON_DIR%\get-pip.py"
 set "VENV_DIR=v_FcsIT_env"
+set "VENV_PYTHON=%~dp0%VENV_DIR%\Scripts\python.exe"
 set "LAUNCHER_BAT=%~dp0FcsIT.bat"
 
 :: ------------------------------------------------------------
@@ -127,12 +128,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
+:: Upgrade pip in the target environment.
+echo Upgrading pip in the FcsIT environment...
+"%VENV_PYTHON%" -m pip install --upgrade pip --no-warn-script-location --disable-pip-version-check
+if errorlevel 1 (
+    echo Failed to upgrade pip. Exiting.
+    exit /b 1
+)
+
 :: Install dependencies
 echo Installing dependencies...
-"%PIP_EXE%" cache purge
-"%PYTHON_EXE%" -m pip install virtualenv --no-warn-script-location
-
-"%~dp0%VENV_DIR%\Scripts\pip.exe" install . --no-warn-script-location --disable-pip-version-check --verbose
+"%VENV_PYTHON%" -m pip install . --no-warn-script-location --disable-pip-version-check --verbose
 if errorlevel 1 (
     echo Failed to install dependencies. Exiting.
     exit /b 1
@@ -140,7 +146,7 @@ if errorlevel 1 (
 
 :: Build the bundled manual into the directory used by FcsIT.
 echo Building local documentation...
-"%~dp0%VENV_DIR%\Scripts\python.exe" setup.py build_docs
+"%VENV_PYTHON%" "src\include\documentation_builder.py" --source "docs" --target "src\doc\assets\help_html"
 if errorlevel 1 (
     echo Failed to build local documentation. Exiting.
     exit /b 1

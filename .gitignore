@@ -4,7 +4,7 @@
 
 # =========================
 
-**pycache**/
+__pycache__/
 *.py[cod]
 *$py.class
 
@@ -41,7 +41,7 @@ share/python-wheels/
 *.egg
 .installed.cfg
 MANIFEST
-python_embeded/
+python_embedded/
 # =========================
 
 # PyInstaller
@@ -87,6 +87,7 @@ nosetests.xml
 # =========================
 
 .ipynb_checkpoints/
+.jupyter_cache/
 profile_default/
 ipython_config.py
 
@@ -113,6 +114,9 @@ venv.bak/
 # =========================
 
 .mypy_cache/
+.ruff_cache/
+.pytype/
+.pyright/
 .dmypy.json
 dmypy.json
 .pyre/
@@ -127,6 +131,26 @@ dmypy.json
 .spyproject
 .ropeproject
 .virtual_documents
+.idea/
+.vscode/
+
+# =========================
+
+# Editor, patch and operating-system artefacts
+
+# =========================
+
+*~
+*.swp
+*.swo
+*.bak
+*.tmp
+*.temp
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+Desktop.ini
 
 # =========================
 

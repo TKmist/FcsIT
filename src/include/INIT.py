@@ -1,20 +1,19 @@
-"""
-Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
+# Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
+#
+# This file is part of the FcsIT repository.
+#
+# This file is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or any later version.
+#
+# This file is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this file. If not, see <https://www.gnu.org/licenses/>.
 
-This file is part of the FcsIT repository.
-
-This file is free software: you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation, either version 3 of the License, or any later version.
-
-This file is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-for more details.
-
-You should have received a copy of the GNU General Public License
-along with this file. If not, see <https://www.gnu.org/licenses/>.
-"""
 # from __future__ import annotations
 import os
 import sys
@@ -665,14 +664,17 @@ class FcsITUpdater:
         """Build documentation inside an extracted update before installation."""
         update_root = Path(update_root).resolve()
         requirements = update_root / "docs" / "requirements.txt"
-        setup_script = update_root / "setup.py"
+        documentation_builder = (
+            update_root / "src" / "include" / "documentation_builder.py"
+        )
         if not requirements.is_file():
             raise FileNotFoundError(
                 f"Update package is missing documentation requirements: {requirements}"
             )
-        if not setup_script.is_file():
+        if not documentation_builder.is_file():
             raise FileNotFoundError(
-                f"Update package is missing setup.py: {setup_script}"
+                "Update package is missing the documentation builder: "
+                f"{documentation_builder}"
             )
 
         subprocess.run(
@@ -688,7 +690,20 @@ class FcsITUpdater:
             check=True,
         )
         subprocess.run(
-            [sys.executable, str(setup_script), "build_docs"],
+            [
+                sys.executable,
+                str(documentation_builder),
+                "--source",
+                str(update_root / "docs"),
+                "--target",
+                str(
+                    update_root
+                    / "src"
+                    / "doc"
+                    / "assets"
+                    / "help_html"
+                ),
+            ],
             cwd=update_root,
             check=True,
         )

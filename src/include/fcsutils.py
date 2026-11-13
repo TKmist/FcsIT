@@ -1,20 +1,19 @@
-"""
-Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
+# Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
+#
+# This file is part of the FcsIT repository.
+#
+# This file is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or any later version.
+#
+# This file is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this file. If not, see <https://www.gnu.org/licenses/>.
 
-This file is part of the FcsIT repository.
-
-This file is free software: you can redistribute it and/or modify it
-under the terms of the GNU General Public License as published by the
-Free Software Foundation, either version 3 of the License, or any later version.
-
-This file is distributed in the hope that it will be useful, but WITHOUT
-ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-for more details.
-
-You should have received a copy of the GNU General Public License
-along with this file. If not, see <https://www.gnu.org/licenses/>.
-"""
 import dearpygui.dearpygui as dpg
 import numpy as np
 from numpy import log10, sqrt, exp, log, pi
@@ -34,11 +33,37 @@ except ImportError:
 from Methods.PTU_Corr.include.correlation_methods import tttr2xfcs
 import time
 import socket
+import warnings
 
 
 from numba import njit, prange
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+def _validate_cbb_block_size(segment_count, block_size):
+    """Return a safe CBB block length for the available segments."""
+    try:
+        requested_value = float(block_size)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError('CBB block length must be a finite integer.') from exc
+    if not np.isfinite(requested_value) or not requested_value.is_integer():
+        raise ValueError('CBB block length must be a finite integer.')
+    requested_block_size = int(requested_value)
+
+    maximum_block_size = max(1, (int(segment_count) - 1) // 2)
+    validated_block_size = min(
+        max(requested_block_size, 1),
+        maximum_block_size,
+    )
+    if validated_block_size != requested_block_size:
+        warnings.warn(
+            f'CBB block length {requested_block_size} is invalid for '
+            f'{segment_count} segments; using {validated_block_size}.',
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    return validated_block_size
 
 
 @njit(cache=True)
@@ -222,12 +247,15 @@ def _attach_lag_covariance(frame, bootstrap_result, lag_times):
 
 
 class load_fcs:
+    MAX_TIMETRACE_BINS = 2_000_000
+
     def __init__(self,file,time_bin):
         
         self.file = file
         self.TTTR_Mode = None
         self.mode = ''
         self.time_bin = time_bin #[s]
+        self.time_bin_adjustment_message = None
         self.timetrace = {}
         self.count_rate = {} #[Hz]
         self.decay_hist = {}
@@ -453,13 +481,48 @@ class load_fcs:
     def bin_time_data(self, PHOTS, tb, OCCUR):
         channels = [ch for ch in PHOTS.keys() if ch.startswith('channel_')]
         trace = {}
-        delta_t_ns = int(round(tb * 1e9))
+        if not np.isfinite(tb) or tb <= 0.0:
+            raise ValueError('The display time bin must be a positive finite value.')
+
+        requested_delta_t_ns = max(1, int(round(tb * 1e9)))
+        maximum_span_ns = 0
+        for ch in channels:
+            channel_time = np.asarray(OCCUR[ch]['time'])
+            if channel_time.size:
+                channel_span = int(np.ceil(channel_time.max() - channel_time.min()))
+                maximum_span_ns = max(maximum_span_ns, channel_span)
+
+        requested_bins = maximum_span_ns // requested_delta_t_ns + 1
+        delta_t_ns = requested_delta_t_ns
+        self.time_bin_adjustment_message = None
+        if requested_bins > self.MAX_TIMETRACE_BINS:
+            delta_t_ns = max(
+                requested_delta_t_ns,
+                int(np.ceil(maximum_span_ns / (self.MAX_TIMETRACE_BINS - 1))),
+            )
+            adjusted_time_bin = delta_t_ns * 1e-9
+            minimum_allocation_gib = requested_bins * 8 / (1024 ** 3)
+            self.time_bin_adjustment_message = (
+                f'The requested display time bin would generate '
+                f'{requested_bins:,} points and require at least '
+                f'{minimum_allocation_gib:.2f} GiB for a single dense array. '
+                f'The display time bin was increased to '
+                f'{adjusted_time_bin:.6g} s. This does not affect TTTR '
+                f'correlation, which uses photon arrival times directly.'
+            )
+            warnings.warn(self.time_bin_adjustment_message, RuntimeWarning)
+
+        self.time_bin = delta_t_ns * 1e-9
         for ch in channels:
             # print(OCCUR[ch]['time'])
             t_ns = np.floor(OCCUR[ch]['time'] + 0.5).astype(np.int64)
             offset = t_ns.min()
             bins_idx = (t_ns - offset) // delta_t_ns
-            
+            number_of_bins = int(bins_idx.max()) + 1
+            if number_of_bins > self.MAX_TIMETRACE_BINS:
+                raise MemoryError(
+                    f'Refusing to allocate {number_of_bins:,} display time bins.'
+                )
             counts = np.bincount(bins_idx, minlength=bins_idx.max() + 1)
             time_axis = (offset + np.arange(counts.size, dtype=np.int64) * delta_t_ns).astype(np.float64)
             trace[ch] = pd.DataFrame({
@@ -790,6 +853,7 @@ class load_fcs:
             std_series  = pd.Series(0.0, index=df.index, name='SE')
             covariance = np.zeros((len(df), len(df)), dtype=float)
             return mean_series, std_series, covariance, np.ones_like(covariance, dtype=int)
+        block_size = _validate_cbb_block_size(M, block_size)
         X   = df[cols].to_numpy(float)   
         tau = df[tau_col].to_numpy(float)
         Tn  = len(tau)
@@ -885,7 +949,8 @@ class load_fcs:
         return mean_series, std_series, covariance, valid_counts
 
 
-    def _CORRELATE(self,chunks,nsub,npoints,tau_min,tau_max,meta,sender):
+    def _CORRELATE(self,chunks,nsub,npoints,tau_min,tau_max,meta,sender,
+                   block_size=3):
         t_total = time.perf_counter()
         t_filter = 0.0
         t_prepare = 0.0
@@ -988,12 +1053,24 @@ class load_fcs:
         ccols_ch_2 = [col for col in CrossNorm_ch_2.columns if col.startswith('CCF_chunk_')]
         if len(cols_ch_1) ==1:
             autoNorm_ch_1['MEAN'] = autoNorm_ch_1[[col for col in autoNorm_ch_1.columns if col.startswith('ACF_chunk_')][0]]
+            autoNorm_ch_1['SE'] = 0.0
             CrossNorm_ch_1['MEAN']=CrossNorm_ch_1[[col for col in CrossNorm_ch_1.columns if col.startswith('CCF_chunk_')][0]]
+            CrossNorm_ch_1['SE'] = 0.0
         else:
             # auto_ch1 = self._compute_MEAN_STD(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
             # Cross_ch1 =  self._compute_MEAN_STD(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
-            auto_ch1 = self._compute_MEAN_STD_numba(autoNorm_ch_1, cols_ch_1,chunk_lengths_sec=_ChunkLength)
-            Cross_ch1 =  self._compute_MEAN_STD_numba(CrossNorm_ch_1, ccols_ch_1,chunk_lengths_sec=_ChunkLength)
+            auto_ch1 = self._compute_MEAN_STD_numba(
+                autoNorm_ch_1,
+                cols_ch_1,
+                block_size=block_size,
+                chunk_lengths_sec=_ChunkLength,
+            )
+            Cross_ch1 = self._compute_MEAN_STD_numba(
+                CrossNorm_ch_1,
+                ccols_ch_1,
+                block_size=block_size,
+                chunk_lengths_sec=_ChunkLength,
+            )
             # print(auto_ch1[0].head(),auto_ch1[1].head())
             # print(auto_ch1_[0].head(),auto_ch1_[1].head())
             autoNorm_ch_1['MEAN'] = auto_ch1[0]
@@ -1012,12 +1089,24 @@ class load_fcs:
             )
         if len(cols_ch_2) ==1:
             autoNorm_ch_2['MEAN'] = autoNorm_ch_2[[col for col in autoNorm_ch_2.columns if col.startswith('ACF_chunk_')][0]]
+            autoNorm_ch_2['SE'] = 0.0
             CrossNorm_ch_2['MEAN']=CrossNorm_ch_2[[col for col in CrossNorm_ch_2.columns if col.startswith('CCF_chunk_')][0]]
+            CrossNorm_ch_2['SE'] = 0.0
         else:
             # auto_ch2 = self._compute_MEAN_STD(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
             # Cross_ch2 =  self._compute_MEAN_STD(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
-            auto_ch2 = self._compute_MEAN_STD_numba(autoNorm_ch_2, cols_ch_2,chunk_lengths_sec=_ChunkLength)
-            Cross_ch2 =  self._compute_MEAN_STD_numba(CrossNorm_ch_2, ccols_ch_2,chunk_lengths_sec=_ChunkLength)
+            auto_ch2 = self._compute_MEAN_STD_numba(
+                autoNorm_ch_2,
+                cols_ch_2,
+                block_size=block_size,
+                chunk_lengths_sec=_ChunkLength,
+            )
+            Cross_ch2 = self._compute_MEAN_STD_numba(
+                CrossNorm_ch_2,
+                ccols_ch_2,
+                block_size=block_size,
+                chunk_lengths_sec=_ChunkLength,
+            )
             autoNorm_ch_2['MEAN'] = auto_ch2[0]
             autoNorm_ch_2['SE'] = auto_ch2[1]
             CrossNorm_ch_2['MEAN'] = Cross_ch2[0]
@@ -1068,6 +1157,7 @@ class load_fcs:
             std_series = pd.Series(0.0, index=df.index, name='SE')
             covariance = np.zeros((len(df), len(df)), dtype=float)
             return mean_series, std_series, covariance, np.ones_like(covariance, dtype=int)
+        block_size = _validate_cbb_block_size(M, block_size)
     
         X = df[cols].to_numpy(dtype=np.float64)
         tau = df[tau_col].to_numpy(dtype=np.float64)

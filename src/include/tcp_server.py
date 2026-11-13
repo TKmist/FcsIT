@@ -1,17 +1,19 @@
-# Copyright (C) 2026 TKmist (https://github.com/TKmist)
+# Copyright (C) 2026 Tomasz Kalwarczyk (https://github.com/TKmist)
 #
 # This file is part of the FcsIT repository.
 #
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or any later version.
+# This file is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation, either version 3 of the License, or any later version.
 #
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+# This file is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+# for more details.
 #
-# You should have received a copy of the GNU General Public License along with
-# this program. If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License
+# along with this file. If not, see <https://www.gnu.org/licenses/>.
+
 """Versioned newline-delimited JSON server for the FcsIT command protocol."""
 
 from __future__ import annotations
@@ -91,7 +93,6 @@ class TCPJSONCommandServer:
         dispatcher: GuiCommandDispatcher,
         host: str = "127.0.0.1",
         port: int = 8765,
-        timeout: float = 300.0,
         token: str | None = None,
         max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES,
     ) -> None:
@@ -103,7 +104,6 @@ class TCPJSONCommandServer:
         self.dispatcher = dispatcher
         self.host = host
         self.port = port
-        self.timeout = timeout
         self.token = token if token is not None else os.getenv("FCSIT_TCP_TOKEN")
         self.max_request_bytes = max_request_bytes
         self._server: _ThreadingTCPServer | None = None
@@ -176,14 +176,7 @@ class TCPJSONCommandServer:
             pending = self.dispatcher.submit(name, arguments)
         except CommandError as exc:
             return self.error_response(request_id, str(exc))
-        if not pending.finished.wait(self.timeout):
-            return {
-                "protocol": PROTOCOL_NAME,
-                "version": PROTOCOL_VERSION,
-                "id": request_id,
-                "command_id": pending.command_id,
-                "status": "accepted",
-            }
+        pending.finished.wait()
         if pending.error:
             response = self.error_response(request_id, pending.error)
             response["command_id"] = pending.command_id

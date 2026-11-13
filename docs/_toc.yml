@@ -1,2 +1,14 @@
 format: jb-book
 root: Main_title
+chapters:
+  - file: Release_notes
+  - file: Installation
+  - file: Usage
+    sections:
+      - file: Import_PTU
+      - file: Time-binned
+      - file: FCS_fitting
+      - file: Scripted-control
+  - file: Fitting_models
+  - file: Dev_section
+  - file: Credits
