@@ -3159,7 +3159,9 @@ class _FCS_Fitting_vars_funct:
                             else:
                                 pass
                         if app_data == self.Del:
-                            self.show_delete_Curve_window()
+                            check = dpg.is_key_down(self.LAlt_key)
+                            if check:
+                                self.show_delete_Curve_window()
                     if app_data == self.w_key:
                         check = dpg.is_key_down(self.LAlt_key)
                         if check:
